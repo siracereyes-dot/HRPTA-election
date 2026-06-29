@@ -497,7 +497,7 @@ export default function AdviserPortal() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-[#475569] uppercase tracking-wider block">Candidate Pool</span>
+                <span className="text-xs font-semibold text-[#475569] uppercase tracking-wider block">Register Candidates</span>
                 <span className="text-3xl font-serif text-[#1e3a8a] mt-1 block">{candidates.length} parents</span>
               </div>
               <div className="w-10 h-10 bg-[#f1f5f9] text-[#1e3a8a] rounded-xl border border-[#e2e8f0] flex items-center justify-center">
@@ -538,7 +538,7 @@ export default function AdviserPortal() {
                   : 'border-transparent text-[#475569] hover:text-[#0f172a]'
               }`}
             >
-              Candidates Pool ({candidates.length})
+              Register Candidates ({candidates.length})
             </button>
             <button
               onClick={() => setActivePortalTab('students')}
@@ -548,7 +548,7 @@ export default function AdviserPortal() {
                   : 'border-transparent text-[#475569] hover:text-[#0f172a]'
               }`}
             >
-              Authentication student roster ({students.length})
+              Register Student LRN ({students.length})
             </button>
             <button
               onClick={() => setActivePortalTab('results')}

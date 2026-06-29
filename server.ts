@@ -488,12 +488,25 @@ app.patch('/api/elections/:id/status', async (req, res) => {
 
   if (useSupabaseMode) {
     const { data, error } = await supabase.from('hrpta_elections').update({ status }).eq('id', id).select();
-    if (!error) {
-      if (data && data.length > 0) return res.json(data[0]);
-      return res.status(404).json({ error: 'Election not found in database.' });
+    
+    if (error) {
+      console.error('Supabase update election status failed:', error);
+      return res.status(500).json({ error: error.message });
     }
-    console.error('Supabase update election status failed:', error);
-    return res.status(500).json({ error: error.message });
+    
+    if (data && data.length > 0) {
+      return res.json(data[0]);
+    }
+
+    // Diagnostic: Check if row exists but update failed (likely RLS)
+    const { data: checkData, error: checkError } = await supabase.from('hrpta_elections').select('id').eq('id', id);
+    if (!checkError && checkData && checkData.length === 0) {
+      return res.status(404).json({ error: `Election with ID ${id} not found in database. It may have been deleted.` });
+    } else if (!checkError && checkData && checkData.length > 0) {
+      return res.status(403).json({ error: 'Permission Denied: The election exists but your Supabase RLS policies are preventing updates. Ensure you have run the latest "Allow public update" SQL policy commands.' });
+    }
+
+    return res.status(404).json({ error: 'Election not found in database.' });
   }
 
   const idx = mockElections.findIndex(e => e.id === id);
