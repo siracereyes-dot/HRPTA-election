@@ -716,16 +716,12 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
       has_voted: false
     }));
 
-    // First delete existing students to refresh list, or insert/ignore. Let's delete existing first for this upload refresh.
-    await supabase.from('hrpta_students').delete().eq('section_id', sectionId);
-
-    const { data, error } = await supabase.from('hrpta_students').insert(rows).select();
+    const { data, error } = await supabase.from('hrpta_students').upsert(rows).select();
     if (!error) return res.json(data);
     console.error('Supabase bulk save students failed:', error);
   }
 
-  // Sandbox mode: Clear existing students in section and upload new
-  mockStudents = mockStudents.filter(st => st.section_id !== sectionId);
+  // Sandbox mode: Append new students
   const added = [];
   for (const st of students) {
     const newStudent = {
