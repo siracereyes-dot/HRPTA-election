@@ -605,6 +605,51 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
     return res.status(400).json({ error: 'Fullname, child name, and income source are required' });
   }
 
+  // 1. Check for duplicates in the same election across all sections
+  if (useSupabaseMode) {
+    try {
+      // Get the election_id for this section
+      const { data: sec, error: secErr } = await supabase.from('hrpta_sections').select('election_id').eq('id', sectionId).single();
+      if (secErr || !sec) return res.status(404).json({ error: 'Section not found' });
+      
+      const electionId = sec.election_id;
+
+      // Check if candidate with this name already exists in ANY section of this election
+      const { data: existing, error: existErr } = await supabase
+        .from('hrpta_candidates')
+        .select('*, hrpta_sections!inner(election_id, section_name, grade_level)')
+        .eq('fullname', fullname)
+        .eq('hrpta_sections.election_id', electionId);
+
+      if (existing && existing.length > 0) {
+        const other = existing[0].hrpta_sections;
+        return res.status(400).json({ 
+          error: `Candidate "${fullname}" is already registered in ${other.grade_level} - ${other.section_name}. Nominees can only run in one section per election.` 
+        });
+      }
+    } catch (err) {
+      console.error('Error checking duplicate candidate:', err);
+    }
+  } else {
+    // Sandbox check
+    const sec = mockSections.find(s => s.id === sectionId);
+    if (!sec) return res.status(404).json({ error: 'Section not found' });
+    const electionId = sec.election_id;
+    const electionSections = mockSections.filter(s => s.election_id === electionId).map(s => s.id);
+    
+    const duplicate = mockCandidates.find(c => 
+      electionSections.includes(c.section_id) && 
+      c.fullname.toLowerCase() === fullname.trim().toLowerCase()
+    );
+
+    if (duplicate) {
+      const otherSec = mockSections.find(s => s.id === duplicate.section_id);
+      return res.status(400).json({ 
+        error: `Candidate "${fullname}" is already registered in ${otherSec?.grade_level} - ${otherSec?.section_name}. Nominees can only run in one section per election.` 
+      });
+    }
+  }
+
   if (useSupabaseMode) {
     const { data, error } = await supabase.from('hrpta_candidates').insert([{
       section_id: sectionId,
@@ -653,6 +698,57 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
 
   if (!candidates || !Array.isArray(candidates)) {
     return res.status(400).json({ error: 'Candidates array is required' });
+  }
+
+  // 1. Check for duplicates in the same election across all sections
+  if (useSupabaseMode) {
+    try {
+      const { data: sec } = await supabase.from('hrpta_sections').select('election_id').eq('id', sectionId).single();
+      if (sec) {
+        const electionId = sec.election_id;
+        // Get all existing candidates for this election
+        const { data: existing } = await supabase
+          .from('hrpta_candidates')
+          .select('fullname, hrpta_sections!inner(election_id)')
+          .eq('hrpta_sections.election_id', electionId);
+
+        const existingNames = new Set((existing || []).map(e => e.fullname.toLowerCase()));
+        
+        // Filter out candidates already in election
+        const filtered = candidates.filter(c => !existingNames.has(c.fullname.toLowerCase()));
+        
+        if (filtered.length === 0 && candidates.length > 0) {
+          return res.status(400).json({ error: 'All candidates in this list are already registered in other sections of this election.' });
+        }
+        
+        // Update the list to only include non-duplicates for the rest of the logic
+        // (Wait, user might want to know which failed, but bulk insert usually fails entirely or succeeds partially)
+        // For simplicity, we'll just insert the non-duplicates or throw error if any duplicate found
+        // The requirement says "Nominated Candidate cannot run in different sections", so we should probably stop if any are invalid.
+        
+        const duplicates = candidates.filter(c => existingNames.has(c.fullname.toLowerCase()));
+        if (duplicates.length > 0) {
+          return res.status(400).json({ 
+            error: `Bulk upload contains candidates already registered in this election: ${duplicates.map(d => d.fullname).join(', ')}` 
+          });
+        }
+      }
+    } catch (err) {}
+  } else {
+    // Sandbox bulk check
+    const sec = mockSections.find(s => s.id === sectionId);
+    if (sec) {
+      const electionId = sec.election_id;
+      const electionSections = mockSections.filter(s => s.election_id === electionId).map(s => s.id);
+      const existingNames = new Set(mockCandidates.filter(c => electionSections.includes(c.section_id)).map(c => c.fullname.toLowerCase()));
+      
+      const duplicates = candidates.filter(c => existingNames.has(c.fullname.toLowerCase()));
+      if (duplicates.length > 0) {
+        return res.status(400).json({ 
+          error: `Bulk upload contains candidates already registered in this election: ${duplicates.map(d => d.fullname).join(', ')}` 
+        });
+      }
+    }
   }
 
   if (useSupabaseMode) {
