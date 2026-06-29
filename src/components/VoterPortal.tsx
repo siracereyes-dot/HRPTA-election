@@ -25,6 +25,7 @@ export default function VoterPortal() {
 
   // Dialog / Modal State
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
+  const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [voterAlert, setVoterAlert] = useState<{ title: string; message: string; type?: 'error' | 'warning' } | null>(null);
 
   // Authenticate parent by student's LRN
@@ -89,6 +90,7 @@ export default function VoterPortal() {
     }
 
     setShowConfirmSubmit(true);
+    setDeclarationAccepted(false);
   };
 
   const handleConfirmCastBallot = async () => {
@@ -422,6 +424,30 @@ export default function VoterPortal() {
               Are you ready to cast your official Homeroom PTA ballot? This action is secure, recorded against your LRN, and cannot be modified or repeated.
             </p>
 
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <h4 className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Legal Declaration of Authority
+              </h4>
+              <p className="text-[11px] text-amber-900 leading-relaxed italic">
+                "I hereby solemnly declare and affirm that I am the Legal Parent and/or the Lawful Guardian of the student registered under the LRN provided for this Grade Level and Section. I acknowledge that I am authorized by law to cast this household vote for the Homeroom PTA Election, and I understand that any misrepresentation of my identity or authority may be subject to legal consequences under applicable laws and regulations."
+              </p>
+              
+              <label className="flex items-start gap-2.5 cursor-pointer group">
+                <div className="pt-0.5">
+                  <input 
+                    type="checkbox"
+                    checked={declarationAccepted}
+                    onChange={(e) => setDeclarationAccepted(e.target.checked)}
+                    className="w-4 h-4 rounded border-[#cbd5e1] text-[#1e3a8a] focus:ring-[#1e3a8a] cursor-pointer"
+                  />
+                </div>
+                <span className="text-[11px] font-medium text-amber-950 group-hover:text-black transition-colors">
+                  I confirm that I am the Lawful Parent/Guardian and I accept this declaration.
+                </span>
+              </label>
+            </div>
+
             <div className="pt-2 border-t border-[#e2e8f0] flex justify-end gap-3">
               <button
                 type="button"
@@ -433,7 +459,12 @@ export default function VoterPortal() {
               <button
                 type="button"
                 onClick={handleConfirmCastBallot}
-                className="px-5 py-2.5 bg-[#1e3a8a] hover:bg-[#172554] text-white text-xs font-bold rounded-xl shadow-xs hover:shadow-sm transition-all"
+                disabled={!declarationAccepted}
+                className={`px-5 py-2.5 text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 ${
+                  declarationAccepted 
+                    ? 'bg-[#1e3a8a] hover:bg-[#172554] text-white' 
+                    : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                }`}
               >
                 Yes, Cast Secure Ballot
               </button>
