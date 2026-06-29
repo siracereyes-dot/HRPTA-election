@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
-  Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
-  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock, Download, FileSpreadsheet
+  Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, RefreshCw, BarChart3, Eye, EyeOff,
+  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Lock, Download, FileSpreadsheet
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate } from '../types';
@@ -28,21 +28,6 @@ export default function AdminPortal() {
   const [loginError, setLoginError] = useState('');
   const [loggingIn, setLoggingIn] = useState(false);
 
-  // SQL Console states
-  const [sqlQuery, setSqlQuery] = useState(`CREATE TABLE IF NOT EXISTS hrpta_admin (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;`);
-  const [sqlError, setSqlError] = useState('');
-  const [sqlSuccess, setSqlSuccess] = useState('');
-  const [sqlRows, setSqlRows] = useState<any[]>([]);
-  const [executingSql, setExecutingSql] = useState(false);
-  const [showSqlEditorInLogin, setShowSqlEditorInLogin] = useState(false);
-
   const [elections, setElections] = useState<Election[]>([]);
   const [selectedElection, setSelectedElection] = useState<Election | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -61,7 +46,6 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   
   const [copiedSql, setCopiedSql] = useState(false);
   const [showPasscodes, setShowPasscodes] = useState<{ [secId: string]: boolean }>({});
-  const [showSqlPanel, setShowSqlPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'elections' | 'database'>('elections');
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -156,33 +140,6 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
     setAdminPassword('');
   };
 
-  const handleExecuteSql = async () => {
-    setSqlError('');
-    setSqlSuccess('');
-    setSqlRows([]);
-    setExecutingSql(true);
-    try {
-      const res = await fetch('/api/execute-sql', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sql: sqlQuery })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSqlSuccess(data.message || 'SQL query executed successfully.');
-        if (data.rows && data.rows.length > 0) {
-          setSqlRows(data.rows);
-        }
-      } else {
-        setSqlError(data.error || 'SQL Execution Error.');
-      }
-    } catch (err: any) {
-      setSqlError(err.message || 'Connection failed.');
-    } finally {
-      setExecutingSql(false);
-    }
-  };
-
   const fetchDbStatus = async () => {
     try {
       const res = await fetch('/api/db-status');
@@ -266,6 +223,19 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   };
 
   const toggleElectionStatus = async (id: string, currentStatus: 'active' | 'closed') => {
+    const action = currentStatus === 'active' ? 'close' : 'reopen';
+    const result = await Swal.fire({
+      title: `${action.charAt(0).toUpperCase() + action.slice(1)} Election?`,
+      text: `Are you sure you want to ${action} this election campaign?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonColor: '#1e3a8a',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: `Yes, ${action} it!`
+    });
+
+    if (!result.isConfirmed) return;
+
     const nextStatus = currentStatus === 'active' ? 'closed' : 'active';
     try {
       const res = await fetch(`/api/elections/${id}/status`, {
@@ -273,13 +243,29 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus })
       });
-      const updated = await res.json();
-      setElections(prev => prev.map(e => e.id === id ? updated : e));
-      if (selectedElection?.id === id) {
-        setSelectedElection(updated);
+      if (res.ok) {
+        const updated = await res.json();
+        setElections(prev => prev.map(e => e.id === id ? updated : e));
+        if (selectedElection?.id === id) {
+          setSelectedElection(updated);
+        }
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: `Election has been ${nextStatus === 'active' ? 'reopened' : 'closed'}.`,
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } else {
+        throw new Error('Failed to update status');
       }
     } catch (err) {
       console.error('Error updating election status:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: 'Failed to update election status. Please check your connection.'
+      });
     }
   };
 
@@ -691,106 +677,6 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
               )}
             </button>
           </form>
-
-          {/* SQL Editor Tool Section inside login screen */}
-          <div className="border-t border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-[#1e3a8a]" />
-                <span className="text-xs font-bold text-[#1e3a8a] font-mono">SQL Developer Editor</span>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setShowSqlEditorInLogin(!showSqlEditorInLogin)}
-                className="text-[10px] font-bold uppercase tracking-wider text-[#1e3a8a] hover:underline"
-              >
-                {showSqlEditorInLogin ? "Hide Terminal" : "Show Terminal"}
-              </button>
-            </div>
-
-            {showSqlEditorInLogin && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="mt-3 space-y-3"
-              >
-                <p className="text-[10px] text-gray-600 font-sans leading-relaxed">
-                  Use this interactive query environment to execute SQL directly into the local sandbox database or linked Supabase instance.
-                </p>
-
-                <div className="space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider font-mono">Raw Query Input</span>
-                    <button
-                      type="button"
-                      onClick={() => setSqlQuery(`INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;`)}
-                      className="text-[9px] text-[#1e3a8a] font-mono hover:underline uppercase font-bold"
-                    >
-                      [Auto-Fill Setup Query]
-                    </button>
-                  </div>
-                  <textarea
-                    rows={6}
-                    value={sqlQuery}
-                    onChange={e => setSqlQuery(e.target.value)}
-                    className="w-full p-2.5 font-mono text-[10px] bg-slate-900 text-emerald-400 rounded-lg border border-slate-700 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-                    placeholder="Enter PostgreSQL query statements..."
-                  />
-                </div>
-
-                {sqlError && (
-                  <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2 rounded-lg text-[10px] font-mono">
-                    ERROR: {sqlError}
-                  </div>
-                )}
-
-                {sqlSuccess && (
-                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-2 rounded-lg text-[10px] font-mono">
-                    SUCCESS: {sqlSuccess}
-                  </div>
-                )}
-
-                {sqlRows.length > 0 && (
-                  <div className="max-h-40 overflow-auto border border-gray-200 rounded-lg bg-white">
-                    <table className="w-full text-[10px] font-mono text-left border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100 border-b border-gray-200">
-                          {Object.keys(sqlRows[0]).map(key => (
-                            <th key={key} className="p-1 px-2 font-bold text-gray-600">{key}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {sqlRows.map((row, idx) => (
-                          <tr key={idx}>
-                            {Object.values(row).map((val: any, vIdx) => (
-                              <td key={vIdx} className="p-1 px-2 text-gray-800">
-                                {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  disabled={executingSql}
-                  onClick={handleExecuteSql}
-                  className="w-full bg-slate-800 hover:bg-slate-700 text-white font-mono py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
-                >
-                  {executingSql ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Play className="w-3 h-3" />
-                  )}
-                  <span>Run SQL Query</span>
-                </button>
-              </motion.div>
-            )}
-          </div>
         </motion.div>
       </div>
     );

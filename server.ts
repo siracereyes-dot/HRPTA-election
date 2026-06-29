@@ -438,6 +438,7 @@ app.get('/api/elections', async (req, res) => {
     const { data, error } = await supabase.from('hrpta_elections').select('*').order('created_at', { ascending: false });
     if (!error) return res.json(data);
     console.error('Supabase fetch elections failed:', error);
+    return res.status(500).json({ error: error.message });
   }
   res.json(mockElections);
 });
@@ -450,6 +451,7 @@ app.post('/api/elections', async (req, res) => {
     const { data, error } = await supabase.from('hrpta_elections').insert([{ title, status: 'active' }]).select();
     if (!error) return res.json(data[0]);
     console.error('Supabase create election failed:', error);
+    return res.status(500).json({ error: error.message });
   }
 
   const newElection = {
@@ -468,6 +470,7 @@ app.delete('/api/elections/:id', async (req, res) => {
     const { error } = await supabase.from('hrpta_elections').delete().eq('id', id);
     if (!error) return res.json({ success: true });
     console.error('Supabase delete election failed:', error);
+    return res.status(500).json({ error: error.message });
   }
 
   mockElections = mockElections.filter(e => e.id !== id);
@@ -482,8 +485,12 @@ app.patch('/api/elections/:id/status', async (req, res) => {
 
   if (useSupabaseMode) {
     const { data, error } = await supabase.from('hrpta_elections').update({ status }).eq('id', id).select();
-    if (!error) return res.json(data[0]);
+    if (!error) {
+      if (data && data.length > 0) return res.json(data[0]);
+      return res.status(404).json({ error: 'Election not found in database.' });
+    }
     console.error('Supabase update election status failed:', error);
+    return res.status(500).json({ error: error.message });
   }
 
   const idx = mockElections.findIndex(e => e.id === id);
