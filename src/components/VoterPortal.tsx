@@ -40,7 +40,15 @@ export default function VoterPortal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lrn: lrnInput })
       });
-      const data = await res.json();
+      
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        setErrorMsg(`Failed to parse server response: ${res.statusText}`);
+        return;
+      }
+      
       if (res.ok) {
         if (data.student.has_voted) {
           setErrorMsg('Our records show that the household vote for this LRN has already been cast.');
@@ -58,7 +66,8 @@ export default function VoterPortal() {
         setErrorMsg(data.error || 'Voter authentication failed. Verify the LRN or contact your room Adviser.');
       }
     } catch (err) {
-      setErrorMsg('Network error. Failed to authenticate.');
+      console.error('Authentication fetch error:', err);
+      setErrorMsg('Network error. Failed to authenticate. Please check your connection.');
     } finally {
       setLoadingAuth(false);
     }

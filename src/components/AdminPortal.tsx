@@ -1288,8 +1288,8 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                                   ) : (
                                     <div className="space-y-6">
                                       {(['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'] as const).map(pos => {
-                                        const posCandidates = secResults.candidates;
                                         const votesMap = (secResults.results?.positions?.[pos] || {}) as Record<string, number>;
+                                        const posCandidates = secResults.candidates.filter(c => (votesMap[c.id] || 0) > 0);
                                         const totalPosVotes = Object.values(votesMap).reduce((a, b) => a + b, 0);
 
                                         // Sort candidates by vote count
@@ -1563,12 +1563,12 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
               }
 
               return (['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'] as const).map(pos => {
-                const posCandidates = secResults.candidates;
                 const votesMap = (secResults.results?.positions?.[pos] || {}) as Record<string, number>;
+                const posCandidates = secResults.candidates.filter(c => (votesMap[c.id] || 0) > 0);
                 const totalPosVotes = Object.values(votesMap).reduce((a, b) => a + b, 0);
 
                 // Sort candidates by vote count
-                const sorted = [...secResults.candidates].sort((a, b) => (votesMap[b.id] || 0) - (votesMap[a.id] || 0));
+                const sorted = [...posCandidates].sort((a, b) => (votesMap[b.id] || 0) - (votesMap[a.id] || 0));
 
                 return (
                   <div key={pos} className="border border-gray-300 rounded-lg p-3">
@@ -1577,7 +1577,7 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                       <span className="text-[10px] text-gray-500 font-mono font-bold">{totalPosVotes} total votes cast</span>
                     </div>
 
-                    {secResults.candidates.length === 0 ? (
+                    {posCandidates.length === 0 ? (
                       <p className="text-xs text-gray-500 italic">No nominees registered.</p>
                     ) : (
                       <table className="w-full text-left text-xs border-collapse">
