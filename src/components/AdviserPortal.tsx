@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
-  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut 
+  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Candidate, Student, Position, POSITIONS } from '../types';
@@ -44,6 +44,12 @@ export default function AdviserPortal() {
   
   const [uploadSuccess, setUploadSuccess] = useState({ students: false, candidates: false });
   const [activePortalTab, setActivePortalTab] = useState<'candidates' | 'students' | 'results'>('candidates');
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Handle Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -165,13 +171,20 @@ export default function AdviserPortal() {
 
   // Delete Candidate
   const handleDeleteCandidate = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this candidate? This will delete any votes already cast for them.')) return;
-    try {
-      await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
-      fetchSectionData();
-    } catch (err) {
-      console.error('Error deleting candidate:', err);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Remove Candidate?',
+      message: 'Are you sure you want to remove this candidate? This will delete any votes already cast for them. This action is permanent.',
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/candidates/${id}`, { method: 'DELETE' });
+          fetchSectionData();
+        } catch (err) {
+          console.error('Error deleting candidate:', err);
+        }
+        setConfirmModal(null);
+      }
+    });
   };
 
   // Bulk student parse and upload
@@ -230,7 +243,7 @@ export default function AdviserPortal() {
     if (!session || !bulkCandInput.trim()) return;
 
     // Parse: CSV format
-    // Format: Full Name, Child Name, Income Source (Employment/Business/Other/None), Income Details
+    // Format: Full Name, Child Name, Position, Income Source (Employment/Business/Other/None), Income Details
     const lines = bulkCandInput.split('\n');
     const parsedCandidates: any[] = [];
 
@@ -239,9 +252,9 @@ export default function AdviserPortal() {
       const parts = line.split(',');
       const fullname = parts[0]?.trim();
       const child_name = parts[1]?.trim();
-      const income_source = (parts[2]?.trim() || 'None') as 'Business' | 'Employment' | 'Other' | 'None';
-      const income_details = parts[3]?.trim() || '';
-      const position = 'President' as Position; // DB column compatibility placeholder
+      const position = parts[2]?.trim() as Position || 'President';
+      const income_source = (parts[3]?.trim() || 'None') as 'Business' | 'Employment' | 'Other' | 'None';
+      const income_details = parts[4]?.trim() || '';
 
       if (fullname && child_name) {
         parsedCandidates.push({
@@ -472,6 +485,17 @@ export default function AdviserPortal() {
                     </div>
 
                     <div>
+                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Position</label>
+                      <select
+                        value={candPosition}
+                        onChange={(e: any) => setCandPosition(e.target.value)}
+                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
+                      >
+                        {POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                      </select>
+                    </div>
+
+                    <div>
                       <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Source of Income</label>
                       <select
                         value={candIncomeSource}
@@ -522,10 +546,10 @@ export default function AdviserPortal() {
                   <form onSubmit={handleBulkCandidateUpload} className="space-y-3">
                     <div className="bg-[#f1f5f9] rounded-xl p-3 border border-[#e2e8f0] text-[10px] text-[#475569] leading-normal font-mono mb-2">
                       <span className="font-bold text-[#0f172a] block mb-0.5">Format per line:</span>
-                      FullName, ChildName, IncomeSource, IncomeDetails
+                      FullName, ChildName, Position, IncomeSource, IncomeDetails
                       <span className="font-bold text-[#0f172a] block mt-1.5 mb-0.5">Example:</span>
-                      Juana Santos, Pedro Santos, Business, Santos Sari-sari Store<br/>
-                      Rey Reyes, Amy Reyes, Employment, PLDT - Engineer
+                      Juana Santos, Pedro Santos, President, Business, Santos Sari-sari Store<br/>
+                      Rey Reyes, Amy Reyes, Vice President, Employment, PLDT - Engineer
                     </div>
                     
                     <textarea
@@ -762,6 +786,46 @@ export default function AdviserPortal() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-[#0f172a]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in" id="confirm-modal-overlay">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-[24px] border border-[#e2e8f0] shadow-xl max-w-md w-full p-6 space-y-4"
+            id="confirm-modal-content"
+          >
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center border border-red-100 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h3 className="font-serif font-bold text-lg text-[#0f172a]">{confirmModal.title}</h3>
+            </div>
+            
+            <p className="text-sm text-[#475569] leading-relaxed font-sans">
+              {confirmModal.message}
+            </p>
+            
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-white hover:bg-[#f8fafc] text-[#475569] border border-[#e2e8f0] rounded-xl text-xs font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
     </div>

@@ -80,6 +80,10 @@ let mockStudents: any[] = [
 
 let mockVotes: any[] = [];
 
+let mockAdminAccounts: any[] = [
+  { id: 'admin1', username: 'admin', password: 'RMCHSHRPTA@2026', created_at: new Date().toISOString() }
+];
+
 // Helper to determine if we should use Supabase or mock
 let useSupabaseMode = false;
 
@@ -199,9 +203,212 @@ CREATE POLICY "Allow public delete" ON hrpta_students FOR DELETE USING (true);
 
 CREATE POLICY "Allow public select" ON hrpta_votes FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_votes FOR INSERT WITH CHECK (true);
+
+-- 6. Admin Accounts Table
+CREATE TABLE IF NOT EXISTS hrpta_admin (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE hrpta_admin ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public select" ON hrpta_admin FOR SELECT USING (true);
+CREATE POLICY "Allow public insert" ON hrpta_admin FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON hrpta_admin FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete" ON hrpta_admin FOR DELETE USING (true);
+
+-- Insert default admin account
+INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;
 `;
 
 // ================= API ENDPOINTS =================
+
+// Helper function to resolve mock data
+function getMockTableData(tableName: string) {
+  switch (tableName) {
+    case 'hrpta_admin': return mockAdminAccounts;
+    case 'hrpta_elections': return mockElections;
+    case 'hrpta_sections': return mockSections;
+    case 'hrpta_candidates': return mockCandidates;
+    case 'hrpta_students': return mockStudents;
+    case 'hrpta_votes': return mockVotes;
+    default: return [];
+  }
+}
+
+// Execute simulated or actual SQL queries
+app.post('/api/execute-sql', async (req, res) => {
+  const { sql } = req.body;
+  if (!sql || typeof sql !== 'string') {
+    return res.status(400).json({ error: 'SQL query is required' });
+  }
+
+  const cleanSql = sql.trim().replace(/;+$/, '');
+  const sqlLower = cleanSql.toLowerCase();
+
+  try {
+    // 1. CREATE TABLE
+    if (sqlLower.startsWith('create table')) {
+      if (sqlLower.includes('hrpta_admin')) {
+        return res.json({
+          success: true,
+          message: 'Table "hrpta_admin" created or already exists.',
+          rows: []
+        });
+      } else {
+        return res.json({
+          success: true,
+          message: 'Table created successfully (simulated).',
+          rows: []
+        });
+      }
+    }
+
+    // 2. INSERT INTO
+    if (sqlLower.startsWith('insert into')) {
+      if (sqlLower.includes('hrpta_admin')) {
+        const match = cleanSql.match(/insert\s+into\s+hrpta_admin\s*\(\s*username\s*,\s*password\s*\)\s*values\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]\s*\)/i);
+        if (match) {
+          const username = match[1];
+          const password = match[2];
+
+          const existing = mockAdminAccounts.find(a => a.username === username);
+          if (existing) {
+            existing.password = password;
+          } else {
+            mockAdminAccounts.push({
+              id: `admin_${Date.now()}`,
+              username,
+              password,
+              created_at: new Date().toISOString()
+            });
+          }
+
+          if (useSupabaseMode && supabase) {
+            try {
+              await supabase.from('hrpta_admin').upsert({ username, password }, { onConflict: 'username' });
+            } catch (err) {
+              console.error('Supabase admin insert error:', err);
+            }
+          }
+
+          return res.json({
+            success: true,
+            message: `INSERT 0 1. Admin account "${username}" created/updated successfully.`,
+            rows: [{ username, created_at: new Date().toISOString() }]
+          });
+        } else {
+          return res.status(400).json({
+            error: "Invalid INSERT syntax for hrpta_admin. Expected format: INSERT INTO hrpta_admin (username, password) VALUES ('username', 'password')"
+          });
+        }
+      } else {
+        return res.status(400).json({ error: 'INSERT statement is only supported for table "hrpta_admin" in this SQL editor.' });
+      }
+    }
+
+    // 3. SELECT
+    if (sqlLower.startsWith('select')) {
+      let tableName = '';
+      if (sqlLower.includes('from hrpta_admin')) tableName = 'hrpta_admin';
+      else if (sqlLower.includes('from hrpta_elections')) tableName = 'hrpta_elections';
+      else if (sqlLower.includes('from hrpta_sections')) tableName = 'hrpta_sections';
+      else if (sqlLower.includes('from hrpta_candidates')) tableName = 'hrpta_candidates';
+      else if (sqlLower.includes('from hrpta_students')) tableName = 'hrpta_students';
+      else if (sqlLower.includes('from hrpta_votes')) tableName = 'hrpta_votes';
+
+      if (!tableName) {
+        return res.status(400).json({ error: 'Only SELECT queries from hrpta_* tables are supported.' });
+      }
+
+      let rows: any[] = [];
+      if (useSupabaseMode && supabase) {
+        try {
+          const { data, error } = await supabase.from(tableName).select('*');
+          if (!error && data) {
+            rows = data;
+          } else {
+            console.warn(`Supabase select for ${tableName} failed, falling back to mock:`, error);
+            rows = getMockTableData(tableName);
+          }
+        } catch (err) {
+          rows = getMockTableData(tableName);
+        }
+      } else {
+        rows = getMockTableData(tableName);
+      }
+
+      return res.json({
+        success: true,
+        message: `SELECT ${rows.length}`,
+        rows: rows
+      });
+    }
+
+    // 4. DELETE
+    if (sqlLower.startsWith('delete')) {
+      if (sqlLower.includes('from hrpta_admin')) {
+        mockAdminAccounts = [];
+        if (useSupabaseMode && supabase) {
+          try {
+            await supabase.from('hrpta_admin').delete().neq('username', '');
+          } catch (err) {}
+        }
+        return res.json({
+          success: true,
+          message: 'DELETE. All admin accounts cleared.',
+          rows: []
+        });
+      } else {
+        return res.status(400).json({ error: 'DELETE is only supported for table "hrpta_admin" in this SQL editor.' });
+      }
+    }
+
+    return res.status(400).json({
+      error: 'SQL command not supported. You can run CREATE TABLE hrpta_admin, INSERT INTO hrpta_admin, SELECT from any table, or DELETE from hrpta_admin.'
+    });
+
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || String(err) });
+  }
+});
+
+// Admin Account Verification Login API
+app.post('/api/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  if (useSupabaseMode && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('hrpta_admin')
+        .select('*')
+        .eq('username', username)
+        .eq('password', password)
+        .limit(1);
+
+      if (!error && data && data.length > 0) {
+        return res.json({ success: true, user: { username: data[0].username } });
+      }
+    } catch (err) {
+      console.error('Supabase admin login error:', err);
+    }
+  }
+
+  const found = mockAdminAccounts.find(a => a.username === username && a.password === password);
+  if (found) {
+    return res.json({ success: true, user: { username: found.username } });
+  }
+
+  if (username === 'admin' && password === 'RMCHSHRPTA@2026') {
+    return res.json({ success: true, user: { username: 'admin' } });
+  }
+
+  res.status(401).json({ error: 'Invalid admin credentials.' });
+});
 
 // Database status check
 app.get('/api/db-status', async (req, res) => {

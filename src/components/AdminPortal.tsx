@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
-  Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff
+  Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
+  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Election, Section, SectionStats } from '../types';
+import { Election, Section, SectionStats, Candidate } from '../types';
 
 interface DbStatus {
   configured: boolean;
@@ -17,6 +18,30 @@ interface DbStatus {
 }
 
 export default function AdminPortal() {
+  // Admin authentication state
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return sessionStorage.getItem('admin_logged_in') === 'true';
+  });
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
+
+  // SQL Console states
+  const [sqlQuery, setSqlQuery] = useState(`CREATE TABLE IF NOT EXISTS hrpta_admin (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;`);
+  const [sqlError, setSqlError] = useState('');
+  const [sqlSuccess, setSqlSuccess] = useState('');
+  const [sqlRows, setSqlRows] = useState<any[]>([]);
+  const [executingSql, setExecutingSql] = useState(false);
+  const [showSqlEditorInLogin, setShowSqlEditorInLogin] = useState(false);
+
   const [elections, setElections] = useState<Election[]>([]);
   const [selectedElection, setSelectedElection] = useState<Election | null>(null);
   const [sections, setSections] = useState<Section[]>([]);
@@ -35,6 +60,87 @@ export default function AdminPortal() {
   const [showPasscodes, setShowPasscodes] = useState<{ [secId: string]: boolean }>({});
   const [showSqlPanel, setShowSqlPanel] = useState(false);
   const [activeTab, setActiveTab] = useState<'elections' | 'database'>('elections');
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  // Results State
+  const [adminSubTab, setAdminSubTab] = useState<'manage' | 'results'>('manage');
+  const [resultsSubView, setResultsSubView] = useState<'sections' | 'consolidated'>('sections');
+  const [selectedResultsSection, setSelectedResultsSection] = useState<Section | null>(null);
+  const [resultsBySection, setResultsBySection] = useState<{
+    [sectionId: string]: {
+      candidates: Candidate[];
+      results: { positions?: { [pos: string]: { [candId: string]: number } }; totalVotesCast?: number };
+      loading: boolean;
+    }
+  }>({});
+  const [loadingResults, setLoadingResults] = useState(false);
+  const [printingSection, setPrintingSection] = useState<Section | null>(null);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    setLoggingIn(true);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: adminUsername, password: adminPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsLoggedIn(true);
+        sessionStorage.setItem('admin_logged_in', 'true');
+        setLoginError('');
+        fetchElections();
+        fetchDbStatus();
+      } else {
+        setLoginError(data.error || 'Invalid credentials');
+      }
+    } catch (err) {
+      setLoginError('Error connecting to the login server');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setIsLoggedIn(false);
+    sessionStorage.removeItem('admin_logged_in');
+    setAdminUsername('');
+    setAdminPassword('');
+  };
+
+  const handleExecuteSql = async () => {
+    setSqlError('');
+    setSqlSuccess('');
+    setSqlRows([]);
+    setExecutingSql(true);
+    try {
+      const res = await fetch('/api/execute-sql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sql: sqlQuery })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSqlSuccess(data.message || 'SQL query executed successfully.');
+        if (data.rows && data.rows.length > 0) {
+          setSqlRows(data.rows);
+        }
+      } else {
+        setSqlError(data.error || 'SQL Execution Error.');
+      }
+    } catch (err: any) {
+      setSqlError(err.message || 'Connection failed.');
+    } finally {
+      setExecutingSql(false);
+    }
+  };
 
   const fetchDbStatus = async () => {
     try {
@@ -99,16 +205,23 @@ export default function AdminPortal() {
   };
 
   const deleteElection = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this election? This will also delete all associated sections, candidates, and votes.')) return;
-    try {
-      await fetch(`/api/elections/${id}`, { method: 'DELETE' });
-      setElections(prev => prev.filter(e => e.id !== id));
-      if (selectedElection?.id === id) {
-        setSelectedElection(null);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Election Campaign?',
+      message: 'Are you sure you want to delete this election? This will also delete all associated sections, candidates, and votes. This action is permanent and cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/elections/${id}`, { method: 'DELETE' });
+          setElections(prev => prev.filter(e => e.id !== id));
+          if (selectedElection?.id === id) {
+            setSelectedElection(null);
+          }
+        } catch (err) {
+          console.error('Error deleting election:', err);
+        }
+        setConfirmModal(null);
       }
-    } catch (err) {
-      console.error('Error deleting election:', err);
-    }
+    });
   };
 
   const toggleElectionStatus = async (id: string, currentStatus: 'active' | 'closed') => {
@@ -180,13 +293,20 @@ export default function AdminPortal() {
   };
 
   const deleteSection = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this section? All candidates and students uploaded by this adviser will be lost.')) return;
-    try {
-      await fetch(`/api/sections/${id}`, { method: 'DELETE' });
-      fetchElectionData();
-    } catch (err) {
-      console.error('Error deleting section:', err);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Homeroom Section?',
+      message: 'Are you sure you want to delete this section? All candidates and students uploaded by this adviser will be lost. This action is permanent and cannot be undone.',
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/sections/${id}`, { method: 'DELETE' });
+          fetchElectionData();
+        } catch (err) {
+          console.error('Error deleting section:', err);
+        }
+        setConfirmModal(null);
+      }
+    });
   };
 
   const handleCopySql = () => {
@@ -205,12 +325,304 @@ export default function AdminPortal() {
     fetchElectionData();
   }, [selectedElection]);
 
+  const fetchAllSectionResults = async () => {
+    if (!selectedElection || sections.length === 0) return;
+    setLoadingResults(true);
+    
+    // Set all sections to loading state initially
+    const initial: typeof resultsBySection = { ...resultsBySection };
+    sections.forEach(sec => {
+      initial[sec.id] = {
+        candidates: resultsBySection[sec.id]?.candidates || [],
+        results: resultsBySection[sec.id]?.results || {},
+        loading: true
+      };
+    });
+    setResultsBySection(initial);
+
+    try {
+      await Promise.all(sections.map(async (sec) => {
+        try {
+          const candRes = await fetch(`/api/sections/${sec.id}/candidates`);
+          const candData = await candRes.json();
+
+          const resRes = await fetch(`/api/sections/${sec.id}/results`);
+          const resData = await resRes.json();
+
+          setResultsBySection(prev => ({
+            ...prev,
+            [sec.id]: {
+              candidates: candData,
+              results: resData,
+              loading: false
+            }
+          }));
+        } catch (err) {
+          console.error(`Error fetching results for section ${sec.id}:`, err);
+          setResultsBySection(prev => ({
+            ...prev,
+            [sec.id]: {
+              ...prev[sec.id],
+              loading: false
+            }
+          }));
+        }
+      }));
+    } catch (err) {
+      console.error('Error fetching all results:', err);
+    } finally {
+      setLoadingResults(false);
+    }
+  };
+
+  useEffect(() => {
+    if (adminSubTab === 'results' && selectedElection && sections.length > 0) {
+      fetchAllSectionResults();
+    }
+  }, [adminSubTab, selectedElection, sections.length]);
+
+  useEffect(() => {
+    if (sections.length > 0) {
+      if (!selectedResultsSection || !sections.some(s => s.id === selectedResultsSection.id)) {
+        setSelectedResultsSection(sections[0]);
+      }
+    } else {
+      setSelectedResultsSection(null);
+    }
+  }, [sections]);
+
+  const handlePrintSection = (section: Section) => {
+    setPrintingSection(section);
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
+  const getWinnerForPosition = (sectionId: string, position: string) => {
+    const secData = resultsBySection[sectionId];
+    if (!secData || !secData.candidates || !secData.results?.positions) return 'No Nominees';
+    
+    const positionCandidates = secData.candidates.filter(c => c.position === position);
+    if (positionCandidates.length === 0) return 'No Nominees';
+
+    const votesMap = secData.results.positions[position] || {};
+    
+    let maxVotes = -1;
+    let winnerCand: any = null;
+    let isTie = false;
+    let tieList: any[] = [];
+
+    positionCandidates.forEach(cand => {
+      const votes = votesMap[cand.id] || 0;
+      if (votes > maxVotes) {
+        maxVotes = votes;
+        winnerCand = cand;
+        isTie = false;
+        tieList = [cand];
+      } else if (votes === maxVotes && maxVotes >= 0) {
+        isTie = true;
+        tieList.push(cand);
+      }
+    });
+
+    if (maxVotes === 0 && positionCandidates.length > 0) {
+      return 'No votes cast';
+    }
+
+    if (isTie && tieList.length > 1) {
+      return `Tie: ${tieList.map(c => c.fullname).join(' & ')} (${maxVotes} votes)`;
+    }
+
+    return winnerCand ? `${winnerCand.fullname} (${maxVotes} votes)` : 'No Nominees';
+  };
+
   const togglePasscodeVisibility = (id: string) => {
     setShowPasscodes(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  if (!isLoggedIn) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-16" id="admin-login-container">
+        <motion.div 
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white border border-[#e2e8f0] rounded-2xl shadow-xl overflow-hidden"
+        >
+          {/* Header */}
+          <div className="bg-[#1e3a8a] px-6 py-8 text-center text-white relative">
+            <div className="absolute top-4 right-4">
+              <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono uppercase font-bold tracking-wider">Secure Gate</span>
+            </div>
+            <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-xs">
+              <Lock className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-xl font-serif font-bold tracking-tight">Admin Organizer Sign In</h2>
+            <p className="text-xs text-blue-100 mt-1 font-sans">Access of Admin Organizer requires verification</p>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleAdminLogin} className="p-6 space-y-4">
+            {loginError && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-mono">Username</label>
+              <div className="relative">
+                <input 
+                  type="text"
+                  required
+                  placeholder="Enter administrator username"
+                  value={adminUsername}
+                  onChange={e => setAdminUsername(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a] transition-all bg-gray-50 text-gray-900"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider font-mono">Password</label>
+              <div className="relative">
+                <input 
+                  type="password"
+                  required
+                  placeholder="Enter password credential"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] focus:border-[#1e3a8a] transition-all bg-gray-50 text-gray-900"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loggingIn}
+              className="w-full bg-[#1e3a8a] text-white py-2.5 rounded-xl font-bold text-xs hover:bg-[#152e72] transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
+            >
+              {loggingIn ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <LogIn className="w-4 h-4" />
+                  <span>Authenticate Session</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* SQL Editor Tool Section inside login screen */}
+          <div className="border-t border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-[#1e3a8a]" />
+                <span className="text-xs font-bold text-[#1e3a8a] font-mono">SQL Developer Editor</span>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowSqlEditorInLogin(!showSqlEditorInLogin)}
+                className="text-[10px] font-bold uppercase tracking-wider text-[#1e3a8a] hover:underline"
+              >
+                {showSqlEditorInLogin ? "Hide Terminal" : "Show Terminal"}
+              </button>
+            </div>
+
+            {showSqlEditorInLogin && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mt-3 space-y-3"
+              >
+                <p className="text-[10px] text-gray-600 font-sans leading-relaxed">
+                  Use this interactive query environment to execute SQL directly into the local sandbox database or linked Supabase instance.
+                </p>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider font-mono">Raw Query Input</span>
+                    <button
+                      type="button"
+                      onClick={() => setSqlQuery(`INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;`)}
+                      className="text-[9px] text-[#1e3a8a] font-mono hover:underline uppercase font-bold"
+                    >
+                      [Auto-Fill Setup Query]
+                    </button>
+                  </div>
+                  <textarea
+                    rows={6}
+                    value={sqlQuery}
+                    onChange={e => setSqlQuery(e.target.value)}
+                    className="w-full p-2.5 font-mono text-[10px] bg-slate-900 text-emerald-400 rounded-lg border border-slate-700 focus:outline-hidden focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+                    placeholder="Enter PostgreSQL query statements..."
+                  />
+                </div>
+
+                {sqlError && (
+                  <div className="bg-rose-50 border border-rose-200 text-rose-800 p-2 rounded-lg text-[10px] font-mono">
+                    ERROR: {sqlError}
+                  </div>
+                )}
+
+                {sqlSuccess && (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-2 rounded-lg text-[10px] font-mono">
+                    SUCCESS: {sqlSuccess}
+                  </div>
+                )}
+
+                {sqlRows.length > 0 && (
+                  <div className="max-h-40 overflow-auto border border-gray-200 rounded-lg bg-white">
+                    <table className="w-full text-[10px] font-mono text-left border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 border-b border-gray-200">
+                          {Object.keys(sqlRows[0]).map(key => (
+                            <th key={key} className="p-1 px-2 font-bold text-gray-600">{key}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {sqlRows.map((row, idx) => (
+                          <tr key={idx}>
+                            {Object.values(row).map((val: any, vIdx) => (
+                              <td key={vIdx} className="p-1 px-2 text-gray-800">
+                                {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={executingSql}
+                  onClick={handleExecuteSql}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-white font-mono py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center gap-1 disabled:opacity-50"
+                >
+                  {executingSql ? (
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Play className="w-3 h-3" />
+                  )}
+                  <span>Run SQL Query</span>
+                </button>
+              </motion.div>
+            )}
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8" id="admin-portal-root">
+      {/* Header bar with Sign Out button */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 pb-4 border-b border-[#e2e8f0]">
         <div>
           <h1 className="text-3xl font-serif font-bold text-[#1e3a8a] tracking-tight flex items-center gap-3">
@@ -222,7 +634,7 @@ export default function AdminPortal() {
           </p>
         </div>
 
-        {/* Database Status Pill */}
+        {/* Database Status Pill & Logout Button */}
         {dbStatus && (
           <div className="mt-4 md:mt-0 flex items-center gap-3">
             <button
@@ -238,6 +650,14 @@ export default function AdminPortal() {
                 Mode: {dbStatus.currentMode === 'supabase' ? 'Live Supabase DB' : 'Local Sandbox Mode'}
               </span>
               <RefreshCw className="w-3.5 h-3.5 ml-1 animate-spin-hover" />
+            </button>
+
+            <button
+              onClick={handleAdminLogout}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold border border-rose-200 bg-rose-50 text-rose-800 hover:bg-rose-100 transition-all shadow-xs"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign Out</span>
             </button>
           </div>
         )}
@@ -488,173 +908,545 @@ export default function AdminPortal() {
                   </div>
                 </div>
 
-                {/* Section Creation Form */}
-                <div className="bg-white rounded-[24px] p-6 shadow-sm border border-[#e2e8f0]">
-                  <h3 className="text-lg font-serif font-bold text-[#1e3a8a] mb-4 flex items-center gap-2">
-                    <Users className="text-[#1e3a8a] w-5 h-5" />
-                    Create and Assign Homeroom Adviser
-                  </h3>
+                {/* Sub-tabs Panel */}
+                <div className="flex bg-[#f1f5f9] p-1 rounded-xl border border-[#e2e8f0]">
+                  <button
+                    type="button"
+                    onClick={() => setAdminSubTab('manage')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      adminSubTab === 'manage'
+                        ? 'bg-white text-[#1e3a8a] shadow-xs'
+                        : 'text-[#475569] hover:text-[#0f172a]'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    Configure & Monitor Sections
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminSubTab('results')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      adminSubTab === 'results'
+                        ? 'bg-white text-[#1e3a8a] shadow-xs'
+                        : 'text-[#475569] hover:text-[#0f172a]'
+                    }`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    View & Print Election Results
+                  </button>
+                </div>
 
-                  <form onSubmit={createSection} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Grade Level</label>
-                      <select
-                        value={newGradeLevel}
-                        onChange={(e) => setNewGradeLevel(e.target.value)}
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
-                      >
-                        <option value="Grade 7">Grade 7</option>
-                        <option value="Grade 8">Grade 8</option>
-                        <option value="Grade 9">Grade 9</option>
-                        <option value="Grade 10">Grade 10</option>
-                        <option value="Grade 11">Grade 11</option>
-                        <option value="Grade 12">Grade 12</option>
-                      </select>
+                {adminSubTab === 'manage' ? (
+                  <>
+                    {/* Section Creation Form */}
+                    <div className="bg-white rounded-[24px] p-6 shadow-sm border border-[#e2e8f0]">
+                      <h3 className="text-base font-serif font-bold text-[#1e3a8a] mb-4 flex items-center gap-2">
+                        <Users className="text-[#1e3a8a] w-5 h-5" />
+                        Create and Assign Homeroom Adviser
+                      </h3>
+
+                      <form onSubmit={createSection} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div>
+                          <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Grade Level</label>
+                          <select
+                            value={newGradeLevel}
+                            onChange={(e) => setNewGradeLevel(e.target.value)}
+                            className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
+                          >
+                            <option value="Grade 7">Grade 7</option>
+                            <option value="Grade 8">Grade 8</option>
+                            <option value="Grade 9">Grade 9</option>
+                            <option value="Grade 10">Grade 10</option>
+                            <option value="Grade 11">Grade 11</option>
+                            <option value="Grade 12">Grade 12</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Section Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={newSectionName}
+                            onChange={(e) => setNewSectionName(e.target.value)}
+                            placeholder="e.g., Amber, Birch"
+                            className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Adviser Name</label>
+                          <input
+                            type="text"
+                            required
+                            value={newAdviserName}
+                            onChange={(e) => setNewAdviserName(e.target.value)}
+                            placeholder="e.g., Mrs. Smith"
+                            className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Adviser Passcode</label>
+                            <input
+                              type="text"
+                              required
+                              value={newAdviserPasscode}
+                              onChange={(e) => setNewAdviserPasscode(e.target.value)}
+                              placeholder="e.g., 4-digit code"
+                              className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="bg-[#1e3a8a] hover:bg-[#172554] text-white rounded-xl p-2.5 transition-all shadow-xs shrink-0 self-end"
+                            title="Add Section"
+                          >
+                            <Plus className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </form>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Section Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newSectionName}
-                        onChange={(e) => setNewSectionName(e.target.value)}
-                        placeholder="e.g., Amber, Birch"
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Adviser Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newAdviserName}
-                        onChange={(e) => setNewAdviserName(e.target.value)}
-                        placeholder="e.g., Mrs. Smith"
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <div className="flex-1">
-                        <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Adviser Passcode</label>
-                        <input
-                          type="text"
-                          required
-                          value={newAdviserPasscode}
-                          onChange={(e) => setNewAdviserPasscode(e.target.value)}
-                          placeholder="e.g., 4-digit code"
-                          className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a]"
-                        />
+                    {/* Sections & Monitoring List */}
+                    <div className="bg-white rounded-[24px] shadow-sm border border-[#e2e8f0] overflow-hidden">
+                      <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center justify-between">
+                        <h3 className="font-serif font-bold text-[#1e3a8a] text-base flex items-center gap-2">
+                          <BarChart3 className="text-[#1e3a8a] w-5 h-5" />
+                          Live Voter Participation Monitor
+                        </h3>
+                        <button 
+                          onClick={fetchElectionData}
+                          className="text-[#1e3a8a] hover:text-[#172554] text-xs font-bold flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" /> Refresh Live Metrics
+                        </button>
                       </div>
+
+                      {sections.length === 0 ? (
+                        <div className="py-12 text-center text-[#475569]">
+                          No sections created under this election campaign yet. Fill the form above to add a room.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-[#f8fafc] text-[#475569] text-xs uppercase tracking-widest font-bold font-mono">
+                                <th className="px-6 py-4 border-b border-[#f1f5f9]">Grade & Section</th>
+                                <th className="px-6 py-4 border-b border-[#f1f5f9]">Adviser</th>
+                                <th className="px-6 py-4 border-b border-[#f1f5f9]">Portal Passcode</th>
+                                <th className="px-6 py-4 border-b border-[#f1f5f9]">Participation Ratio</th>
+                                <th className="px-6 py-4 border-b border-[#f1f5f9] text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[#f1f5f9] text-sm">
+                              {sections.map((section) => {
+                                const stat = sectionStats.find(st => st.section_id === section.id) || {
+                                  total_students: 0,
+                                  voted_students: 0,
+                                  participation_rate: 0
+                                };
+                                return (
+                                  <tr key={section.id} className="hover:bg-[#f8fafc] transition-colors">
+                                    <td className="px-6 py-4 font-bold text-[#0f172a]">
+                                      {section.grade_level} - {section.section_name}
+                                    </td>
+                                    <td className="px-6 py-4 text-[#475569]">
+                                      {section.adviser_name}
+                                    </td>
+                                    <td className="px-6 py-4 text-[#475569] font-mono">
+                                      <div className="flex items-center gap-1.5">
+                                        <span>
+                                          {showPasscodes[section.id] ? section.adviser_passcode : '••••'}
+                                        </span>
+                                        <button 
+                                          onClick={() => togglePasscodeVisibility(section.id)}
+                                          className="text-[#475569] hover:text-[#0f172a]"
+                                        >
+                                          {showPasscodes[section.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <div>
+                                        <div className="flex items-center justify-between text-xs font-semibold text-[#0f172a] mb-1">
+                                          <span>{stat.voted_students} / {stat.total_students} students</span>
+                                          <span>{stat.participation_rate}%</span>
+                                        </div>
+                                        <div className="w-full bg-[#f1f5f9] rounded-full h-2">
+                                          <div 
+                                            className={`h-2 rounded-full transition-all duration-500 ${
+                                              stat.participation_rate >= 80 
+                                                ? 'bg-[#1e3a8a]' 
+                                                : stat.participation_rate >= 50 
+                                                  ? 'bg-[#cbd5e1]' 
+                                                  : 'bg-[#475569]'
+                                            }`}
+                                            style={{ width: `${Math.min(stat.participation_rate, 100)}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                      <button
+                                        onClick={() => deleteSection(section.id)}
+                                        className="text-[#475569] hover:text-red-600 p-1.5 rounded-lg hover:bg-[#f1f5f9] transition-all inline-block"
+                                        title="Delete Section Room"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  /* Elections Results View */
+                  <div className="space-y-6">
+                    {/* Results Sub Toggles & Refresh */}
+                    <div className="bg-white rounded-2xl p-4 border border-[#e2e8f0] flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
+                      <div className="flex gap-2 bg-[#f1f5f9] p-1 rounded-xl w-full sm:w-auto">
+                        <button
+                          type="button"
+                          onClick={() => setResultsSubView('sections')}
+                          className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                            resultsSubView === 'sections'
+                              ? 'bg-white text-[#1e3a8a] shadow-xs'
+                              : 'text-[#475569] hover:text-[#0f172a]'
+                          }`}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Classroom Section Results
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setResultsSubView('consolidated')}
+                          className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                            resultsSubView === 'consolidated'
+                              ? 'bg-white text-[#1e3a8a] shadow-xs'
+                              : 'text-[#475569] hover:text-[#0f172a]'
+                          }`}
+                        >
+                          <Award className="w-3.5 h-3.5" />
+                          Grade-Level Election Summary
+                        </button>
+                      </div>
+
                       <button
-                        type="submit"
-                        className="bg-[#1e3a8a] hover:bg-[#172554] text-white rounded-xl p-2.5 transition-all shadow-xs shrink-0 self-end"
-                        title="Add Section"
+                        type="button"
+                        onClick={fetchAllSectionResults}
+                        disabled={loadingResults}
+                        className="w-full sm:w-auto bg-[#1e3a8a] hover:bg-[#172554] disabled:bg-[#cbd5e1] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center gap-2"
                       >
-                        <Plus className="w-5 h-5" />
+                        <RefreshCw className={`w-3.5 h-3.5 ${loadingResults ? 'animate-spin' : ''}`} />
+                        {loadingResults ? 'Loading Section Results...' : 'Refresh All Results'}
                       </button>
                     </div>
-                  </form>
-                </div>
 
-                {/* Sections & Monitoring List */}
-                <div className="bg-white rounded-[24px] shadow-sm border border-[#e2e8f0] overflow-hidden">
-                  <div className="px-6 py-4 border-b border-[#f1f5f9] flex items-center justify-between">
-                    <h3 className="font-serif font-bold text-[#1e3a8a] text-base flex items-center gap-2">
-                      <BarChart3 className="text-[#1e3a8a] w-5 h-5" />
-                      Live Voter Participation Monitor
-                    </h3>
-                    <button 
-                      onClick={fetchElectionData}
-                      className="text-[#1e3a8a] hover:text-[#172554] text-xs font-bold flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" /> Refresh Live Metrics
-                    </button>
-                  </div>
-
-                  {sections.length === 0 ? (
-                    <div className="py-12 text-center text-[#475569]">
-                      No sections created under this election campaign yet. Fill the form above to add a room.
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-[#f8fafc] text-[#475569] text-xs uppercase tracking-widest font-bold font-mono">
-                            <th className="px-6 py-4 border-b border-[#f1f5f9]">Grade & Section</th>
-                            <th className="px-6 py-4 border-b border-[#f1f5f9]">Adviser</th>
-                            <th className="px-6 py-4 border-b border-[#f1f5f9]">Portal Passcode</th>
-                            <th className="px-6 py-4 border-b border-[#f1f5f9]">Participation Ratio</th>
-                            <th className="px-6 py-4 border-b border-[#f1f5f9] text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#f1f5f9] text-sm">
-                          {sections.map((section) => {
-                            const stat = sectionStats.find(st => st.section_id === section.id) || {
-                              total_students: 0,
-                              voted_students: 0,
-                              participation_rate: 0
-                            };
+                    {sections.length === 0 ? (
+                      <div className="bg-white rounded-[24px] border border-[#e2e8f0] py-16 text-center text-[#475569] px-6">
+                        No sections created under this election campaign yet. Please configure sections under the "Configure & Monitor" tab.
+                      </div>
+                    ) : resultsSubView === 'sections' ? (
+                      /* Section-by-Section view */
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start" id="section-by-section-results">
+                        {/* Left Side: Sections selection */}
+                        <div className="lg:col-span-4 bg-white border border-[#e2e8f0] rounded-[24px] p-4 space-y-2 max-h-[500px] overflow-y-auto">
+                          <h4 className="text-xs font-bold text-[#475569] uppercase tracking-widest font-mono px-2 mb-3">
+                            Select Homeroom Section
+                          </h4>
+                          {sections.map(sec => {
+                            const isSelected = selectedResultsSection?.id === sec.id;
+                            const stat = sectionStats.find(s => s.section_id === sec.id);
                             return (
-                              <tr key={section.id} className="hover:bg-[#f8fafc] transition-colors">
-                                <td className="px-6 py-4 font-bold text-[#0f172a]">
-                                  {section.grade_level} - {section.section_name}
-                                </td>
-                                <td className="px-6 py-4 text-[#475569]">
-                                  {section.adviser_name}
-                                </td>
-                                <td className="px-6 py-4 text-[#475569] font-mono">
-                                  <div className="flex items-center gap-1.5">
-                                    <span>
-                                      {showPasscodes[section.id] ? section.adviser_passcode : '••••'}
-                                    </span>
-                                    <button 
-                                      onClick={() => togglePasscodeVisibility(section.id)}
-                                      className="text-[#475569] hover:text-[#0f172a]"
-                                    >
-                                      {showPasscodes[section.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4">
-                                  <div>
-                                    <div className="flex items-center justify-between text-xs font-semibold text-[#0f172a] mb-1">
-                                      <span>{stat.voted_students} / {stat.total_students} students</span>
-                                      <span>{stat.participation_rate}%</span>
-                                    </div>
-                                    <div className="w-full bg-[#f1f5f9] rounded-full h-2">
-                                      <div 
-                                        className={`h-2 rounded-full transition-all duration-500 ${
-                                          stat.participation_rate >= 80 
-                                            ? 'bg-[#1e3a8a]' 
-                                            : stat.participation_rate >= 50 
-                                              ? 'bg-[#cbd5e1]' 
-                                              : 'bg-[#475569]'
-                                        }`}
-                                        style={{ width: `${Math.min(stat.participation_rate, 100)}%` }}
-                                      />
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-6 py-4 text-right">
-                                  <button
-                                    onClick={() => deleteSection(section.id)}
-                                    className="text-[#475569] hover:text-red-600 p-1.5 rounded-lg hover:bg-[#f1f5f9] transition-all inline-block"
-                                    title="Delete Section Room"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </td>
-                              </tr>
+                              <button
+                                key={sec.id}
+                                type="button"
+                                onClick={() => setSelectedResultsSection(sec)}
+                                className={`w-full text-left p-3 rounded-xl transition-all border flex items-center justify-between group ${
+                                  isSelected
+                                    ? 'bg-amber-50 border-amber-200 text-[#1e3a8a] shadow-2xs'
+                                    : 'bg-white border-[#f1f5f9] hover:bg-[#f8fafc] text-[#0f172a]'
+                                }`}
+                              >
+                                <div className="truncate">
+                                  <span className={`block text-xs font-bold ${isSelected ? 'text-[#1e3a8a]' : 'text-gray-500'}`}>
+                                    {sec.grade_level}
+                                  </span>
+                                  <span className="block font-serif font-bold text-sm truncate">
+                                    {sec.section_name}
+                                  </span>
+                                  <span className="block text-[10px] text-gray-405 truncate mt-0.5">
+                                    Adviser: {sec.adviser_name}
+                                  </span>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  <span className="block text-xs font-bold font-mono">
+                                    {stat ? `${stat.voted_students}/${stat.total_students}` : '0/0'}
+                                  </span>
+                                  <span className="block text-[10px] text-gray-400 font-semibold">
+                                    {stat ? `${stat.participation_rate}%` : '0%'}
+                                  </span>
+                                </div>
+                              </button>
                             );
                           })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+                        </div>
+
+                        {/* Right Side: Section's detailed results */}
+                        <div className="lg:col-span-8 space-y-6">
+                          {selectedResultsSection ? (
+                            (() => {
+                              const secResults = resultsBySection[selectedResultsSection.id];
+                              const stat = sectionStats.find(s => s.section_id === selectedResultsSection.id);
+                              
+                              if (!secResults) {
+                                return (
+                                  <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-12 text-center text-[#475569]">
+                                    <RefreshCw className="w-8 h-8 text-gray-300 mx-auto animate-spin mb-3" />
+                                    <p className="font-bold text-sm">Loading classroom results...</p>
+                                  </div>
+                                );
+                              }
+
+                              if (secResults.loading) {
+                                return (
+                                  <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-12 text-center text-[#475569]">
+                                    <RefreshCw className="w-8 h-8 text-[#1e3a8a] mx-auto animate-spin mb-3" />
+                                    <p className="font-bold text-sm">Retrieving latest tallies...</p>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 space-y-6 shadow-sm">
+                                  {/* Section Result Header */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#f1f5f9] gap-4">
+                                    <div>
+                                      <span className="text-xs font-bold text-amber-600 uppercase tracking-widest font-mono">
+                                        {selectedResultsSection.grade_level}
+                                      </span>
+                                      <h3 className="font-serif font-bold text-[#1e3a8a] text-xl">
+                                        Section {selectedResultsSection.section_name} Results
+                                      </h3>
+                                      <p className="text-xs text-[#475569] mt-0.5">
+                                        Adviser: <span className="font-semibold">{selectedResultsSection.adviser_name}</span>
+                                      </p>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePrintSection(selectedResultsSection)}
+                                      className="bg-amber-550 hover:bg-amber-600 text-[#1e3a8a] border border-[#cbd5e1] hover:border-transparent hover:text-white bg-[#f8fafc] font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-xs flex items-center justify-center gap-1.5 shrink-0"
+                                    >
+                                      <Printer className="w-4 h-4" />
+                                      Print Section Results
+                                    </button>
+                                  </div>
+
+                                  {/* Participation Summary Row */}
+                                  <div className="grid grid-cols-3 gap-4 bg-[#f8fafc] border border-[#e2e8f0] p-4 rounded-xl text-center">
+                                    <div>
+                                      <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 font-mono">Turnout</span>
+                                      <span className="block font-mono font-bold text-lg text-[#1e3a8a]">
+                                        {stat ? `${stat.voted_students} / ${stat.total_students}` : '0 / 0'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 font-mono">Rate</span>
+                                      <span className="block font-mono font-bold text-lg text-amber-600">
+                                        {stat ? `${stat.participation_rate}%` : '0%'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="block text-[10px] uppercase font-bold tracking-wider text-gray-400 font-mono">Total Positions</span>
+                                      <span className="block font-mono font-bold text-lg text-gray-700">5 Positions</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Positions breakdown */}
+                                  {secResults.candidates.length === 0 ? (
+                                    <div className="py-12 text-center text-[#475569] italic">
+                                      No candidates have been nominated in this section.
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-6">
+                                      {(['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'] as const).map(pos => {
+                                        const posCandidates = secResults.candidates.filter(c => c.position === pos);
+                                        const votesMap = (secResults.results?.positions?.[pos] || {}) as Record<string, number>;
+                                        const totalPosVotes = Object.values(votesMap).reduce((a, b) => a + b, 0);
+
+                                        // Sort candidates by vote count
+                                        const sorted = [...posCandidates].sort((a, b) => (votesMap[b.id] || 0) - (votesMap[a.id] || 0));
+
+                                        return (
+                                          <div key={pos} className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl p-4 shadow-2xs">
+                                            <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#f1f5f9]">
+                                              <span className="font-serif font-bold text-sm text-[#1e3a8a]">{pos}</span>
+                                              <span className="text-[10px] bg-slate-200 text-[#1e3a8a] px-2 py-0.5 rounded font-bold font-mono">
+                                                {totalPosVotes} votes cast
+                                              </span>
+                                            </div>
+
+                                            {posCandidates.length === 0 ? (
+                                              <p className="text-xs text-gray-400 italic">No nominees for this position.</p>
+                                            ) : (
+                                              <div className="space-y-3.5">
+                                                {sorted.map((cand, idx) => {
+                                                  const votes = votesMap[cand.id] || 0;
+                                                  const percentage = totalPosVotes > 0 ? Math.round((votes / totalPosVotes) * 100) : 0;
+                                                  const isWinner = idx === 0 && votes > 0;
+
+                                                  return (
+                                                    <div key={cand.id} className="space-y-1">
+                                                      <div className="flex justify-between items-start text-xs">
+                                                        <div>
+                                                          <div className="flex items-center gap-1.5">
+                                                            <span className="font-bold text-[#0f172a]">{cand.fullname}</span>
+                                                            {isWinner && (
+                                                              <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.2 rounded font-bold uppercase tracking-wider">
+                                                                Leading
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                          <span className="text-[10px] text-[#475569] block -mt-0.5">Child: {cand.child_name}</span>
+                                                        </div>
+                                                        <span className="font-mono font-bold text-[#0f172a] text-xs">
+                                                          {votes} votes ({percentage}%)
+                                                        </span>
+                                                      </div>
+                                                      <div className="w-full bg-[#f1f5f9] rounded-full h-1.5 overflow-hidden">
+                                                        <div 
+                                                          className={`h-1.5 rounded-full transition-all duration-500 ${isWinner ? 'bg-amber-500' : 'bg-[#1e3a8a]/70'}`}
+                                                          style={{ width: `${percentage}%` }}
+                                                        />
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()
+                          ) : (
+                            <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-12 text-center text-[#475569]">
+                              <FileText className="w-12 h-12 text-[#f1f5f9] mx-auto mb-4" />
+                              <h3 className="font-serif font-bold text-[#1e3a8a] mb-1 text-lg">No Section Selected</h3>
+                              <p className="text-xs">Select a section from the left sidebar to view its detailed voting counts.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Grade-Level Consolidated Report view */
+                      <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 space-y-6 shadow-sm">
+                        <div>
+                          <h3 className="font-serif font-bold text-[#1e3a8a] text-lg">
+                            Grade-Level Election Summary Report
+                          </h3>
+                          <p className="text-xs text-[#475569] mt-0.5">
+                            Consolidated listing of leading nominees and turnout statistics grouped by Grade Level.
+                          </p>
+                        </div>
+
+                        {/* Iterate over unique grade levels */}
+                        {(() => {
+                          const gradeLevels = Array.from(new Set(sections.map(s => s.grade_level))).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
+
+                          if (gradeLevels.length === 0) {
+                            return <p className="text-sm text-gray-500 text-center py-6">No grade levels found.</p>;
+                          }
+
+                          return gradeLevels.map(grade => {
+                            const gradeSections = sections.filter(s => s.grade_level === grade);
+
+                            return (
+                              <div key={grade} className="border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-2xs">
+                                <div className="bg-slate-50 px-5 py-3 border-b border-[#e2e8f0] flex items-center justify-between">
+                                  <h4 className="font-serif font-bold text-sm text-[#1e3a8a]">
+                                    {grade} Elections
+                                  </h4>
+                                  <span className="text-[10px] uppercase tracking-wider font-mono font-bold bg-[#cbd5e1] text-[#1e3a8a] px-2.5 py-0.5 rounded-full">
+                                    {gradeSections.length} Sections
+                                  </span>
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                      <tr className="bg-[#f8fafc] text-[#475569] uppercase font-bold tracking-wider font-mono border-b border-[#e2e8f0]">
+                                        <th className="px-4 py-3">Section</th>
+                                        <th className="px-4 py-3">President</th>
+                                        <th className="px-4 py-3">Vice President</th>
+                                        <th className="px-4 py-3">Secretary</th>
+                                        <th className="px-4 py-3">Treasurer</th>
+                                        <th className="px-4 py-3">Auditor</th>
+                                        <th className="px-4 py-3 text-right">Turnout</th>
+                                        <th className="px-4 py-3 text-right">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[#f1f5f9] text-[#0f172a]">
+                                      {gradeSections.map(sec => {
+                                        const stat = sectionStats.find(s => s.section_id === sec.id);
+                                        return (
+                                          <tr key={sec.id} className="hover:bg-[#f8fafc]/50 transition-colors">
+                                            <td className="px-4 py-3 font-bold text-[#1e3a8a]">
+                                              {sec.section_name}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'President')}>
+                                              {getWinnerForPosition(sec.id, 'President')}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Vice President')}>
+                                              {getWinnerForPosition(sec.id, 'Vice President')}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Secretary')}>
+                                              {getWinnerForPosition(sec.id, 'Secretary')}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Treasurer')}>
+                                              {getWinnerForPosition(sec.id, 'Treasurer')}
+                                            </td>
+                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Auditor')}>
+                                              {getWinnerForPosition(sec.id, 'Auditor')}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold">
+                                              {stat ? `${stat.voted_students}/${stat.total_students} (${stat.participation_rate}%)` : '0/0'}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                              <button
+                                                type="button"
+                                                onClick={() => handlePrintSection(sec)}
+                                                className="text-[#1e3a8a] hover:text-amber-600 hover:bg-[#1e3a8a]/5 p-1 rounded-lg transition-all"
+                                                title="Print official section report"
+                                              >
+                                                <Printer className="w-4 h-4" />
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <div className="bg-white rounded-[32px] border border-[#e2e8f0] p-12 text-center text-[#475569]">
@@ -663,6 +1455,169 @@ export default function AdminPortal() {
                 <p className="text-xs">Create or select an election from the left column to configure its rooms and monitor metrics.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-[#0f172a]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50" id="confirm-modal-overlay">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="bg-white rounded-[24px] border border-[#e2e8f0] shadow-xl max-w-md w-full p-6 space-y-4"
+            id="confirm-modal-content"
+          >
+            <div className="flex items-center gap-3 text-red-600">
+              <div className="w-10 h-10 bg-red-50 rounded-xl flex items-center justify-center border border-red-100 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <h3 className="font-serif font-bold text-lg text-[#0f172a]">{confirmModal.title}</h3>
+            </div>
+            
+            <p className="text-sm text-[#475569] leading-relaxed font-sans">
+              {confirmModal.message}
+            </p>
+            
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-white hover:bg-[#f8fafc] text-[#475569] border border-[#e2e8f0] rounded-xl text-xs font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition-all shadow-sm"
+              >
+                Yes, Delete
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {printingSection && (
+        <div className="hidden print:block fixed inset-0 bg-white text-black p-8 font-sans" id="print-sheet-rmhs">
+          <div className="text-center border-b-2 border-black pb-4 mb-6">
+            <div className="flex items-center justify-center gap-4 mb-2">
+              <img 
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/88/Ramon_Magsaysay_%28Cubao%29_High_School.svg/500px-Ramon_Magsaysay_%28Cubao%29_High_School.svg.png" 
+                alt="Ramon Magsaysay High School" 
+                className="w-16 h-16 object-contain"
+                referrerPolicy="no-referrer"
+              />
+              <div className="text-left">
+                <h1 className="text-sm font-bold uppercase font-serif tracking-wide text-gray-900">Ramon Magsaysay (Cubao) High School</h1>
+                <p className="text-xs text-gray-600 font-mono">PTA Classroom Homeroom Election Official Report</p>
+                <p className="text-[10px] text-gray-500 font-mono">S.Y. 2026-2027</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-6 grid grid-cols-2 gap-4 text-xs">
+            <div>
+              <p className="font-bold text-gray-500 text-[10px] uppercase font-mono">Election Campaign:</p>
+              <p className="text-sm border-b border-gray-300 pb-1 font-semibold">{selectedElection?.title}</p>
+            </div>
+            <div>
+              <p className="font-bold text-gray-500 text-[10px] uppercase font-mono">Grade & Section:</p>
+              <p className="text-sm border-b border-gray-300 pb-1 font-semibold">{printingSection.grade_level} - {printingSection.section_name}</p>
+            </div>
+            <div>
+              <p className="font-bold text-gray-500 text-[10px] uppercase font-mono">Homeroom Adviser:</p>
+              <p className="text-sm border-b border-gray-300 pb-1 font-semibold">{printingSection.adviser_name}</p>
+            </div>
+            <div>
+              <p className="font-bold text-gray-500 text-[10px] uppercase font-mono">Voter Turnout Metric:</p>
+              <p className="text-sm border-b border-gray-300 pb-1 font-mono font-bold text-emerald-800">
+                {(() => {
+                  const stat = sectionStats.find(s => s.section_id === printingSection.id);
+                  return stat ? `${stat.voted_students} voted / ${stat.total_students} registered (${stat.participation_rate}%)` : 'N/A';
+                })()}
+              </p>
+            </div>
+          </div>
+
+          <h3 className="text-center font-bold text-xs uppercase tracking-wider mb-4 bg-gray-100 py-1 border border-gray-300">
+            Official Election Tally
+          </h3>
+
+          <div className="space-y-4">
+            {(() => {
+              const secResults = resultsBySection[printingSection.id];
+              if (!secResults || !secResults.candidates) {
+                return <p className="italic text-center text-xs">No result data fetched yet. Please refresh database before printing.</p>;
+              }
+
+              return (['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'] as const).map(pos => {
+                const posCandidates = secResults.candidates.filter(c => c.position === pos);
+                const votesMap = (secResults.results?.positions?.[pos] || {}) as Record<string, number>;
+                const totalPosVotes = Object.values(votesMap).reduce((a, b) => a + b, 0);
+
+                // Sort candidates by vote count
+                const sorted = [...posCandidates].sort((a, b) => (votesMap[b.id] || 0) - (votesMap[a.id] || 0));
+
+                return (
+                  <div key={pos} className="border border-gray-300 rounded-lg p-3">
+                    <div className="flex justify-between items-center border-b border-gray-300 pb-1 mb-2">
+                      <span className="font-bold text-xs uppercase text-gray-800">{pos}</span>
+                      <span className="text-[10px] text-gray-500 font-mono font-bold">{totalPosVotes} total votes cast</span>
+                    </div>
+
+                    {posCandidates.length === 0 ? (
+                      <p className="text-xs text-gray-500 italic">No nominees registered.</p>
+                    ) : (
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-gray-200 text-gray-500 uppercase font-bold text-[8px] font-mono">
+                            <th className="py-1">Rank</th>
+                            <th className="py-1">Parent Nominee Fullname</th>
+                            <th className="py-1">Representing Student</th>
+                            <th className="py-1 text-right">Votes</th>
+                            <th className="py-1 text-right">Share (%)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-gray-900">
+                          {sorted.map((cand, idx) => {
+                            const votes = votesMap[cand.id] || 0;
+                            const pct = totalPosVotes > 0 ? Math.round((votes / totalPosVotes) * 100) : 0;
+                            const isWinner = idx === 0 && votes > 0;
+                            return (
+                              <tr key={cand.id} className={isWinner ? 'font-bold bg-gray-50' : ''}>
+                                <td className="py-1.5">{idx + 1}</td>
+                                <td className="py-1.5 flex items-center gap-1">
+                                  <span>{cand.fullname}</span>
+                                  {isWinner && <span className="text-[8px] border border-black px-1 rounded uppercase tracking-wider font-mono text-[7px] bg-white">LEADING</span>}
+                                </td>
+                                <td className="py-1.5">{cand.child_name}</td>
+                                <td className="py-1.5 text-right font-mono">{votes}</td>
+                                <td className="py-1.5 text-right font-mono">{pct}%</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          <div className="mt-10 pt-6 border-t border-dashed border-gray-300 grid grid-cols-2 gap-8 text-center text-xs">
+            <div>
+              <div className="border-b border-black w-48 mx-auto h-8"></div>
+              <p className="font-bold mt-1 uppercase text-[10px]">{printingSection.adviser_name}</p>
+              <p className="text-gray-500 text-[8px] font-mono">Homeroom Adviser Signature</p>
+            </div>
+            <div>
+              <div className="border-b border-black w-48 mx-auto h-8"></div>
+              <p className="font-bold mt-1 uppercase text-[10px]">Election Administrator</p>
+              <p className="text-gray-500 text-[8px] font-mono">RMHS PTA Committee</p>
+            </div>
           </div>
         </div>
       )}
