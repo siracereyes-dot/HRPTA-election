@@ -186,14 +186,17 @@ ALTER TABLE hrpta_votes ENABLE ROW LEVEL SECURITY;
 -- Disable restrict rules for public anonymous access to make implementation straightforward
 CREATE POLICY "Allow public select" ON hrpta_elections FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_elections FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON hrpta_elections FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete" ON hrpta_elections FOR DELETE USING (true);
 
 CREATE POLICY "Allow public select" ON hrpta_sections FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_sections FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON hrpta_sections FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete" ON hrpta_sections FOR DELETE USING (true);
 
 CREATE POLICY "Allow public select" ON hrpta_candidates FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_candidates FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update" ON hrpta_candidates FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete" ON hrpta_candidates FOR DELETE USING (true);
 
 CREATE POLICY "Allow public select" ON hrpta_students FOR SELECT USING (true);

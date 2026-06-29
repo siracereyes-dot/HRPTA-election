@@ -257,14 +257,15 @@ export default function AdminPortal() {
           showConfirmButton: false
         });
       } else {
-        throw new Error('Failed to update status');
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update status');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating election status:', err);
       Swal.fire({
         icon: 'error',
         title: 'Update Failed',
-        text: 'Failed to update election status. Please check your connection.'
+        text: err.message || 'Failed to update election status. Please check your connection.'
       });
     }
   };
