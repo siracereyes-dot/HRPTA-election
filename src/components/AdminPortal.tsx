@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
-  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock, Download
+  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock, Download, FileSpreadsheet
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate } from '../types';
@@ -377,6 +377,65 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
     setBulkSectionText('');
     fetchElectionData();
     alert(`Bulk processing complete!\nSuccess: ${successCount}\nFailed: ${failCount}`);
+  };
+
+  const exportAllResults = async () => {
+    if (!selectedElection || sections.length === 0) return;
+    
+    setLoadingResults(true);
+    
+    try {
+      // Ensure all results are fetched
+      await fetchAllSectionResults();
+      
+      const csvRows = [];
+      
+      // Header
+      const positions = ['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor', 'PRO', 'Sergeant-at-Arms'];
+      csvRows.push(['Grade Level', 'Section Name', 'Adviser', 'Voted/Total Students', 'Participation Rate', ...positions].join(','));
+      
+      // Use the existing gradeLevels array
+      gradeLevels.forEach(grade => {
+        const gradeSections = sections.filter(s => s.grade_level === (grade as string)).sort((a, b) => a.section_name.localeCompare(b.section_name));
+        
+        gradeSections.forEach(sec => {
+          const stat = sectionStats.find(s => s.section_id === sec.id);
+          const participationStr = stat ? `${stat.voted_students}/${stat.total_students}` : 'N/A';
+          const rateStr = stat ? `${stat.participation_rate}%` : 'N/A';
+          
+          const row = [
+            grade,
+            sec.section_name,
+            `"${sec.adviser_name.replace(/"/g, '""')}"`,
+            participationStr,
+            rateStr
+          ];
+          
+          positions.forEach(pos => {
+            const winner = getWinnerForPosition(sec.id, pos);
+            row.push(`"${winner.replace(/"/g, '""')}"`);
+          });
+          
+          csvRows.push(row.join(','));
+        });
+      });
+      
+      const csvContent = csvRows.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `HRPTA_Election_Results_${selectedElection.title.replace(/\s+/g, '_')}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error exporting results:', err);
+      alert('Failed to export results. Please try again.');
+    } finally {
+      setLoadingResults(false);
+    }
   };
 
   const deleteSection = async (id: string) => {
@@ -1158,12 +1217,28 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                           <BarChart3 className="text-[#1e3a8a] w-5 h-5" />
                           Live Voter Participation Monitor
                         </h3>
-                        <button 
-                          onClick={fetchElectionData}
-                          className="text-[#1e3a8a] hover:text-[#172554] text-xs font-bold flex items-center gap-1"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" /> Refresh Live Metrics
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button 
+                            onClick={exportAllResults}
+                            disabled={loadingResults || sections.length === 0}
+                            className="text-emerald-600 hover:text-emerald-700 disabled:text-slate-300 text-xs font-bold flex items-center gap-1 transition-colors"
+                            title="Export all section results to CSV"
+                          >
+                            {loadingResults ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <FileSpreadsheet className="w-3.5 h-3.5" />
+                            )}
+                            Export All Results (CSV)
+                          </button>
+                          <div className="w-px h-4 bg-[#e2e8f0]"></div>
+                          <button 
+                            onClick={fetchElectionData}
+                            className="text-[#1e3a8a] hover:text-[#172554] text-xs font-bold flex items-center gap-1"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin-hover" /> Refresh Live Metrics
+                          </button>
+                        </div>
                       </div>
 
                       {sections.length === 0 ? (
