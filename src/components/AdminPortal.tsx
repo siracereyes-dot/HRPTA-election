@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
-  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock
+  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Terminal, Lock, Download
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate } from '../types';
@@ -68,6 +68,7 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   } | null>(null);
 
   // Results State
+  const gradeLevels = Array.from(new Set(sections.map(s => s.grade_level))).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
   const [adminSubTab, setAdminSubTab] = useState<'manage' | 'results'>('manage');
   const [resultsSubView, setResultsSubView] = useState<'sections' | 'consolidated'>('sections');
   const [selectedResultsSection, setSelectedResultsSection] = useState<Section | null>(null);
@@ -80,6 +81,43 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   }>({});
   const [loadingResults, setLoadingResults] = useState(false);
   const [printingSection, setPrintingSection] = useState<Section | null>(null);
+
+  const handleExportAllResults = () => {
+    const csvRows = [];
+    csvRows.push(['Grade Level', 'Section', 'Position', 'Candidate Name', 'Votes'].join(','));
+
+    sections.forEach(sec => {
+      const secResults = resultsBySection[sec.id];
+      if (secResults && secResults.results) {
+        (['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'] as const).forEach(pos => {
+          const votesMap = (secResults.results?.positions?.[pos] || {}) as Record<string, number>;
+          const candidates = secResults.candidates || [];
+          
+          candidates.forEach(cand => {
+            const votes = votesMap[cand.id] || 0;
+            if (votes > 0) {
+              csvRows.push([
+                `"${sec.grade_level}"`,
+                `"${sec.section_name}"`,
+                `"${pos}"`,
+                `"${cand.fullname}"`,
+                votes
+              ].join(','));
+            }
+          });
+        });
+      }
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'election_results.csv');
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1362,24 +1400,21 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                     ) : (
                       /* Grade-Level Consolidated Report view */
                       <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 space-y-6 shadow-sm">
-                        <div>
-                          <h3 className="font-serif font-bold text-[#1e3a8a] text-lg">
-                            Grade-Level Election Summary Report
-                          </h3>
-                          <p className="text-xs text-[#475569] mt-0.5">
-                            Consolidated listing of leading nominees and turnout statistics grouped by Grade Level.
-                          </p>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#f1f5f9] gap-4">
+                          <div>
+                            <h3 className="font-serif font-bold text-[#1e3a8a] text-lg">
+                              Grade-Level Election Summary Report
+                            </h3>
+                            <p className="text-xs text-[#475569] mt-0.5">
+                                Consolidated listing of leading nominees and turnout statistics grouped by Grade Level.
+                            </p>
+                          </div>
                         </div>
 
-                        {/* Iterate over unique grade levels */}
-                        {(() => {
-                          const gradeLevels = Array.from(new Set(sections.map(s => s.grade_level))).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
-
-                          if (gradeLevels.length === 0) {
-                            return <p className="text-sm text-gray-500 text-center py-6">No grade levels found.</p>;
-                          }
-
-                          return gradeLevels.map(grade => {
+                        {gradeLevels.length === 0 ? (
+                          <p className="text-sm text-gray-500 text-center py-6">No grade levels found.</p>
+                        ) : (
+                          gradeLevels.map(grade => {
                             const gradeSections = sections.filter(s => s.grade_level === grade);
 
                             return (
@@ -1392,7 +1427,6 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                                     {gradeSections.length} Sections
                                   </span>
                                 </div>
-
                                 <div className="overflow-x-auto">
                                   <table className="w-full text-left border-collapse text-xs">
                                     <thead>
@@ -1451,18 +1485,18 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                                 </div>
                               </div>
                             );
-                          });
-                        })()}
+                          })
+                        )}
                       </div>
                     )}
                   </div>
                 )}
               </>
             ) : (
-              <div className="bg-white rounded-[32px] border border-[#e2e8f0] p-12 text-center text-[#475569]">
-                <Layers className="w-12 h-12 text-[#f1f5f9] mx-auto mb-4" />
-                <h3 className="font-serif font-bold text-[#1e3a8a] mb-1 text-lg">No Active Campaign Selected</h3>
-                <p className="text-xs">Create or select an election from the left column to configure its rooms and monitor metrics.</p>
+              <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-16 text-center text-[#475569]">
+                <Layers className="w-16 h-16 text-[#f1f5f9] mx-auto mb-4" />
+                <h2 className="text-xl font-serif font-bold text-[#1e3a8a] mb-2">No Active Election Selected</h2>
+                <p className="text-sm max-w-md mx-auto">Please select an existing election campaign from the left sidebar or create a new one to manage its sections and results.</p>
               </div>
             )}
           </div>
