@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
+import * as XLSX from 'xlsx';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
@@ -391,6 +392,80 @@ export default function AdminPortal() {
     });
   };
 
+  const exportGradeLevelSummary = async () => {
+    if (sections.length === 0) return;
+    
+    try {
+      setLoadingResults(true);
+      await fetchAllSectionResults();
+
+      const exportData: any[] = [];
+      const positions = ['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor'];
+
+      gradeLevels.forEach(grade => {
+        const gradeStr = grade as string;
+        const gradeSections = sections.filter(s => s.grade_level === gradeStr).sort((a, b) => a.section_name.localeCompare(b.section_name));
+        
+        if (gradeSections.length > 0) {
+          // Add a header row for the Grade Level
+          exportData.push({
+            'Grade Level': `*** ${gradeStr.toUpperCase()} ***`,
+            'Section Name': '',
+            'Adviser': '',
+            'Voted/Total': '',
+            'Participation Rate': '',
+            ...positions.reduce((acc, pos) => ({ ...acc, [pos]: '' }), {})
+          });
+
+          gradeSections.forEach(sec => {
+            const stat = sectionStats.find(s => s.section_id === sec.id);
+            
+            const row: any = {
+              'Grade Level': grade,
+              'Section Name': sec.section_name,
+              'Adviser': sec.adviser_name,
+              'Voted/Total': stat ? `${stat.voted_students}/${stat.total_students}` : 'N/A',
+              'Participation Rate': stat ? `${stat.participation_rate}%` : 'N/A'
+            };
+            
+            positions.forEach(pos => {
+              row[pos] = getWinnerForPosition(sec.id, pos);
+            });
+            
+            exportData.push(row);
+          });
+
+          // Add an empty row after each grade level
+          exportData.push({});
+        }
+      });
+      
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Grade-Level Summary");
+      
+      const fileName = `HRPTA_GradeLevel_Summary_${selectedElection?.title.replace(/\s+/g, '_') || 'Report'}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Summary Exported',
+        text: 'The grade-level summary report has been exported to Excel.',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      console.error('Error exporting summary:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: 'Failed to export the grade-level summary report.',
+      });
+    } finally {
+      setLoadingResults(false);
+    }
+  };
+
   const exportAllResults = async () => {
     if (!selectedElection || sections.length === 0) return;
     
@@ -400,54 +475,52 @@ export default function AdminPortal() {
       // Ensure all results are fetched
       await fetchAllSectionResults();
       
-      const csvRows = [];
-      
-      // Header
+      const exportData: any[] = [];
       const positions = ['President', 'Vice President', 'Secretary', 'Treasurer', 'Auditor', 'PRO', 'Sergeant-at-Arms'];
-      csvRows.push(['Grade Level', 'Section Name', 'Adviser', 'Voted/Total Students', 'Participation Rate', ...positions].join(','));
       
-      // Use the existing gradeLevels array
       gradeLevels.forEach(grade => {
         const gradeSections = sections.filter(s => s.grade_level === (grade as string)).sort((a, b) => a.section_name.localeCompare(b.section_name));
         
         gradeSections.forEach(sec => {
           const stat = sectionStats.find(s => s.section_id === sec.id);
-          const participationStr = stat ? `${stat.voted_students}/${stat.total_students}` : 'N/A';
-          const rateStr = stat ? `${stat.participation_rate}%` : 'N/A';
           
-          const row = [
-            grade,
-            sec.section_name,
-            `"${sec.adviser_name.replace(/"/g, '""')}"`,
-            participationStr,
-            rateStr
-          ];
+          const row: any = {
+            'Grade Level': grade,
+            'Section Name': sec.section_name,
+            'Adviser': sec.adviser_name,
+            'Voted/Total': stat ? `${stat.voted_students}/${stat.total_students}` : 'N/A',
+            'Participation Rate': stat ? `${stat.participation_rate}%` : 'N/A'
+          };
           
           positions.forEach(pos => {
-            const winner = getWinnerForPosition(sec.id, pos);
-            row.push(`"${winner.replace(/"/g, '""')}"`);
+            row[pos] = getWinnerForPosition(sec.id, pos);
           });
           
-          csvRows.push(row.join(','));
+          exportData.push(row);
         });
       });
       
-      const csvContent = csvRows.join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `HRPTA_Election_Results_${selectedElection.title.replace(/\s+/g, '_')}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Create worksheet and workbook
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Election Results");
+      
+      // Generate Excel file
+      XLSX.writeFile(workbook, `HRPTA_Election_Results_${selectedElection.title.replace(/\s+/g, '_')}.xlsx`);
+      
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Successful',
+        text: 'The election results have been exported to Excel.',
+        timer: 2000,
+        showConfirmButton: false
+      });
     } catch (err) {
       console.error('Error exporting results:', err);
       Swal.fire({
         icon: 'error',
         title: 'Export Failed',
-        text: 'Failed to export results. Please try again.',
+        text: 'Failed to export results to Excel. Please try again.',
         confirmButtonColor: '#1e3a8a'
       });
     } finally {
@@ -1139,14 +1212,14 @@ export default function AdminPortal() {
                             onClick={exportAllResults}
                             disabled={loadingResults || sections.length === 0}
                             className="text-emerald-600 hover:text-emerald-700 disabled:text-slate-300 text-xs font-bold flex items-center gap-1 transition-colors"
-                            title="Export all section results to CSV"
+                            title="Export all section results to Excel"
                           >
                             {loadingResults ? (
                               <RefreshCw className="w-3.5 h-3.5 animate-spin" />
                             ) : (
                               <FileSpreadsheet className="w-3.5 h-3.5" />
                             )}
-                            Export All Results (CSV)
+                            Export All Results (Excel)
                           </button>
                           <div className="w-px h-4 bg-[#e2e8f0]"></div>
                           <button 
@@ -1504,6 +1577,22 @@ export default function AdminPortal() {
                             <p className="text-xs text-[#475569] mt-0.5">
                                 Consolidated listing of leading nominees and turnout statistics grouped by Grade Level.
                             </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={exportGradeLevelSummary}
+                              className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-all border border-emerald-100 shadow-sm"
+                            >
+                              <FileSpreadsheet className="w-4 h-4" />
+                              Export Summary Report
+                            </button>
+                            <button 
+                              onClick={fetchAllSectionResults}
+                              className="flex items-center gap-1.5 bg-[#f1f5f9] hover:bg-[#cbd5e1] text-[#1e3a8a] text-xs font-bold px-4 py-2.5 rounded-xl transition-all border border-[#e2e8f0] shadow-sm"
+                            >
+                              <RefreshCw className={`w-4 h-4 ${loadingResults ? 'animate-spin' : ''}`} />
+                              Refresh Summary
+                            </button>
                           </div>
                         </div>
 

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import imageCompression from 'browser-image-compression';
 import Swal from 'sweetalert2';
+import * as XLSX from 'xlsx';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
   Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon,
-  Pencil, Save, X
+  Pencil, Save, X, Download
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Candidate, Student, Position, POSITIONS } from '../types';
@@ -126,6 +127,64 @@ export default function AdviserPortal() {
   };
 
   // Fetch Section Data
+  const exportClassResults = () => {
+    if (!candidates || candidates.length === 0) return;
+    
+    try {
+      const exportData: any[] = [];
+      
+      POSITIONS.forEach(position => {
+        const positionVotesMap = (results?.positions?.[position] || {}) as Record<string, number>;
+        const totalPosVotes = Object.values(positionVotesMap).reduce((a, b) => a + b, 0);
+
+        const sortedCandidatesForPos = [...candidates].sort((a, b) => {
+          const votesA = positionVotesMap[a.id] || 0;
+          const votesB = positionVotesMap[b.id] || 0;
+          return votesB - votesA;
+        });
+
+        sortedCandidatesForPos.forEach((c, index) => {
+          const votes = positionVotesMap[c.id] || 0;
+          const percentage = totalPosVotes > 0 ? ((votes / totalPosVotes) * 100).toFixed(1) : '0.0';
+          
+          exportData.push({
+            'Position': index === 0 ? position : '', // Only show position name for the first candidate in that position
+            'Candidate Name': c.fullname,
+            'Child Name': c.child_name,
+            'Votes': votes,
+            'Percentage': `${percentage}%`,
+            'Rank': index + 1
+          });
+        });
+        
+        // Add empty row between positions
+        exportData.push({});
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Election Results");
+      
+      const fileName = `HRPTA_Results_${session.section.grade_level}_${session.section.section_name.replace(/\s+/g, '_')}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Successful',
+        text: 'The classroom results have been exported to Excel.',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      console.error('Error exporting results:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: 'Failed to export results to Excel.',
+      });
+    }
+  };
+
   const fetchSectionData = async () => {
     if (!session) return;
     try {
@@ -921,12 +980,21 @@ export default function AdviserPortal() {
                   </h3>
                   <p className="text-xs text-[#475569]">Secure real-time votes are calculated on-the-fly and refreshed dynamically.</p>
                 </div>
-                <button
-                  onClick={fetchSectionData}
-                  className="flex items-center gap-1.5 bg-[#f1f5f9] hover:bg-[#cbd5e1] text-[#1e3a8a] text-xs font-bold px-3 py-1.5 rounded-lg transition-all border border-[#e2e8f0]"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh Results
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={exportClassResults}
+                    disabled={candidates.length === 0}
+                    className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1.5 rounded-lg transition-all border border-emerald-100 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Export to Excel
+                  </button>
+                  <button
+                    onClick={fetchSectionData}
+                    className="flex items-center gap-1.5 bg-[#f1f5f9] hover:bg-[#cbd5e1] text-[#1e3a8a] text-xs font-bold px-3 py-1.5 rounded-lg transition-all border border-[#e2e8f0]"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Refresh Results
+                  </button>
+                </div>
               </div>
 
               {candidates.length === 0 ? (
