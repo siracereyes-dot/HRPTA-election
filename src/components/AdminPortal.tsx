@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate } from '../types';
+import { ResultsChart } from './ResultsChart';
 
 interface DbStatus {
   configured: boolean;
@@ -560,6 +561,39 @@ export default function AdminPortal() {
   useEffect(() => {
     fetchElectionData();
   }, [selectedElection]);
+
+  // Real-time updates polling
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLoggedIn && selectedElection) {
+      interval = setInterval(() => {
+        fetchElectionData();
+        
+        // If viewing specific section results, auto-refresh that section
+        if (adminSubTab === 'results' && selectedResultsSection) {
+          const secId = selectedResultsSection.id;
+          fetch(`/api/sections/${secId}/candidates`)
+            .then(r => r.json())
+            .then(candData => {
+              fetch(`/api/sections/${secId}/results`)
+                .then(r => r.json())
+                .then(resData => {
+                  setResultsBySection(prev => ({
+                    ...prev,
+                    [secId]: {
+                      candidates: candData,
+                      results: resData,
+                      loading: false
+                    }
+                  }));
+                });
+            })
+            .catch(err => console.error("Real-time sync failed:", err));
+        }
+      }, 10000); // 10 second refresh
+    }
+    return () => clearInterval(interval);
+  }, [isLoggedIn, selectedElection, adminSubTab, selectedResultsSection]);
 
   const fetchAllSectionResults = async () => {
     if (!selectedElection || sections.length === 0) return;
@@ -1547,6 +1581,11 @@ export default function AdminPortal() {
                                                     </div>
                                                   );
                                                 })}
+                                                <ResultsChart 
+                                                  candidates={secResults.candidates} 
+                                                  votes={votesMap} 
+                                                  position={pos} 
+                                                />
                                               </div>
                                             )}
                                           </div>
