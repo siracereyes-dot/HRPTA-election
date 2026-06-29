@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "HRPTA Election System",
+  "description": "A comprehensive digital voting and election management system for Homeroom Parent-Teacher Association (HRPTA) elections, featuring adviser, admin, and voter portals.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { 
   Key, ShieldCheck, UserCheck, Briefcase, FileCheck2, 
   ChevronRight, ArrowRight, CheckCircle2, Lock, Info, Landmark 
@@ -26,7 +27,6 @@ export default function VoterPortal() {
   // Dialog / Modal State
   const [showConfirmSubmit, setShowConfirmSubmit] = useState(false);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
-  const [voterAlert, setVoterAlert] = useState<{ title: string; message: string; type?: 'error' | 'warning' } | null>(null);
 
   // Authenticate parent by student's LRN
   const handleAuthenticate = async (e: React.FormEvent) => {
@@ -82,9 +82,11 @@ export default function VoterPortal() {
     // Check if at least one position has been voted for
     const activeVotedPositions = Object.values(votes).filter(id => id);
     if (activeVotedPositions.length === 0) {
-      setVoterAlert({
+      Swal.fire({
+        icon: 'warning',
         title: 'Empty Ballot',
-        message: 'You must select at least one candidate before casting your ballot.'
+        text: 'You must select at least one candidate before casting your ballot.',
+        confirmButtonColor: '#1e3a8a'
       });
       return;
     }
@@ -112,18 +114,20 @@ export default function VoterPortal() {
         setVoteCastingCompleted(true);
       } else {
         const error = await res.json();
-        setVoterAlert({
+        Swal.fire({
+          icon: 'error',
           title: 'Failed to Cast Ballot',
-          message: error.error || 'Failed to record your vote.',
-          type: 'error'
+          text: error.error || 'Failed to record your vote.',
+          confirmButtonColor: '#1e3a8a'
         });
       }
     } catch (err) {
       console.error('Error submitting vote:', err);
-      setVoterAlert({
+      Swal.fire({
+        icon: 'error',
         title: 'Submission Error',
-        message: 'Network error. Failed to record your ballot.',
-        type: 'error'
+        text: 'Network error. Failed to record your ballot.',
+        confirmButtonColor: '#1e3a8a'
       });
     } finally {
       setIsSubmittingVote(false);
@@ -467,38 +471,6 @@ export default function VoterPortal() {
                 }`}
               >
                 Yes, Cast Secure Ballot
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* Custom Alert Dialog Modal */}
-      {voterAlert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0f172a]/40 backdrop-blur-xs">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-3xl border border-[#e2e8f0] p-6 max-w-sm w-full shadow-lg space-y-4 text-center"
-          >
-            <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto border border-amber-100">
-              <Info className="w-6 h-6" />
-            </div>
-            
-            <div className="space-y-1.5">
-              <h3 className="font-serif font-bold text-[#1e3a8a] text-base">{voterAlert.title}</h3>
-              <p className="text-xs text-[#475569] leading-relaxed">
-                {voterAlert.message}
-              </p>
-            </div>
-
-            <div className="pt-2 border-t border-[#e2e8f0]">
-              <button
-                type="button"
-                onClick={() => setVoterAlert(null)}
-                className="w-full py-2.5 bg-[#f1f5f9] hover:bg-[#e2e8f0] text-[#1e3a8a] text-xs font-bold rounded-xl transition-all"
-              >
-                Acknowledge
               </button>
             </div>
           </motion.div>
