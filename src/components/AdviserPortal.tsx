@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import imageCompression from 'browser-image-compression';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
-  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle
+  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Candidate, Student, Position, POSITIONS } from '../types';
@@ -36,7 +37,7 @@ export default function AdviserPortal() {
   const [candChild, setCandChild] = useState('');
   const [candIncomeSource, setCandIncomeSource] = useState<'Business' | 'Employment' | 'Other' | 'None'>('Employment');
   const [candIncomeDetails, setCandIncomeDetails] = useState('');
-  const [candPosition, setCandPosition] = useState<Position>('President');
+  const [candidatePicture, setCandidatePicture] = useState<string | null>(null);
   
   // Bulk uploads raw text
   const [bulkLrnInput, setBulkLrnInput] = useState('');
@@ -50,6 +51,30 @@ export default function AdviserPortal() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  // Handle image compression
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const options = {
+      maxSizeMB: 0.05, // 50KB limit to save space
+      maxWidthOrHeight: 200,
+      useWebWorker: true,
+    };
+
+    try {
+      const compressedFile = await imageCompression(file, options);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setCandidatePicture(reader.result as string);
+      };
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error(error);
+      alert("Failed to compress image.");
+    }
+  };
 
   // Handle Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -151,7 +176,7 @@ export default function AdviserPortal() {
           child_name: candChild,
           income_source: candIncomeSource,
           income_details: candIncomeDetails,
-          position: candPosition
+          picture_data: candidatePicture
         })
       });
 
@@ -159,6 +184,7 @@ export default function AdviserPortal() {
         setCandName('');
         setCandChild('');
         setCandIncomeDetails('');
+        setCandidatePicture(null);
         fetchSectionData();
       } else {
         const error = await res.json();
@@ -243,7 +269,7 @@ export default function AdviserPortal() {
     if (!session || !bulkCandInput.trim()) return;
 
     // Parse: CSV format
-    // Format: Full Name, Child Name, Position, Income Source (Employment/Business/Other/None), Income Details
+    // Format: Full Name, Child Name, Income Source (Employment/Business/Other/None), Income Details
     const lines = bulkCandInput.split('\n');
     const parsedCandidates: any[] = [];
 
@@ -252,15 +278,13 @@ export default function AdviserPortal() {
       const parts = line.split(',');
       const fullname = parts[0]?.trim();
       const child_name = parts[1]?.trim();
-      const position = parts[2]?.trim() as Position || 'President';
-      const income_source = (parts[3]?.trim() || 'None') as 'Business' | 'Employment' | 'Other' | 'None';
-      const income_details = parts[4]?.trim() || '';
+      const income_source = (parts[2]?.trim() || 'None') as 'Business' | 'Employment' | 'Other' | 'None';
+      const income_details = parts[3]?.trim() || '';
 
       if (fullname && child_name) {
         parsedCandidates.push({
           fullname,
           child_name,
-          position,
           income_source,
           income_details
         });
@@ -485,14 +509,17 @@ export default function AdviserPortal() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Position</label>
-                      <select
-                        value={candPosition}
-                        onChange={(e: any) => setCandPosition(e.target.value)}
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
-                      >
-                        {POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
-                      </select>
+                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Candidate Picture</label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 border-2 border-dashed border-[#e2e8f0] hover:border-[#1e3a8a] rounded-xl p-3 text-sm text-[#475569] hover:text-[#1e3a8a] transition-all bg-[#f8fafc]">
+                          <ImageIcon className="w-5 h-5" />
+                          <span>{candidatePicture ? 'Change Picture' : 'Upload Picture'}</span>
+                          <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                        </label>
+                        {candidatePicture && (
+                          <img src={candidatePicture} alt="Preview" className="w-12 h-12 rounded-xl object-cover" />
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -546,16 +573,16 @@ export default function AdviserPortal() {
                   <form onSubmit={handleBulkCandidateUpload} className="space-y-3">
                     <div className="bg-[#f1f5f9] rounded-xl p-3 border border-[#e2e8f0] text-[10px] text-[#475569] leading-normal font-mono mb-2">
                       <span className="font-bold text-[#0f172a] block mb-0.5">Format per line:</span>
-                      FullName, ChildName, Position, IncomeSource, IncomeDetails
+                      FullName, ChildName, IncomeSource, IncomeDetails
                       <span className="font-bold text-[#0f172a] block mt-1.5 mb-0.5">Example:</span>
-                      Juana Santos, Pedro Santos, President, Business, Santos Sari-sari Store<br/>
-                      Rey Reyes, Amy Reyes, Vice President, Employment, PLDT - Engineer
+                      Juana Santos, Pedro Santos, Business, Santos Sari-sari Store<br/>
+                      Rey Reyes, Amy Reyes, Employment, PLDT - Engineer
                     </div>
                     
                     <textarea
                       value={bulkCandInput}
                       onChange={(e) => setBulkCandInput(e.target.value)}
-                      placeholder="Juana Santos, Pedro Santos, President, Business, Santos Sari-sari Store..."
+                      placeholder="Juana Santos, Pedro Santos, Business, Santos Sari-sari Store..."
                       rows={5}
                       className="w-full text-xs font-mono border border-[#e2e8f0] bg-[#f8fafc] rounded-xl p-3 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
                     />

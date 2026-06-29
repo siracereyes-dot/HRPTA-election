@@ -1136,6 +1136,16 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                           <Award className="w-3.5 h-3.5" />
                           Grade-Level Election Summary
                         </button>
+                        {resultsSubView === 'consolidated' && (
+                          <button
+                            type="button"
+                            onClick={() => window.print()}
+                            className="flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 bg-white text-[#1e3a8a] shadow-xs hover:bg-[#f8fafc]"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            Print Summary
+                          </button>
+                        )}
                       </div>
 
                       <button

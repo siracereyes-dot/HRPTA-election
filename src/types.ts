@@ -37,7 +37,8 @@ export interface Candidate {
   child_name: string;
   income_source: 'Business' | 'Employment' | 'Other' | 'None';
   income_details: string; // business name or company & designation or explanation
-  position: Position;
+  position?: Position;
+  picture_data?: string; // base64 compressed image
   created_at?: string;
 }
 
