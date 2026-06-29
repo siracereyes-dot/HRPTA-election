@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS hrpta_candidates (
   child_name TEXT NOT NULL,
   income_source TEXT NOT NULL,
   income_details TEXT,
-  position TEXT NOT NULL,
+  position TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -601,8 +601,8 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
   const { sectionId } = req.params;
   const { fullname, child_name, income_source, income_details, position } = req.body;
 
-  if (!fullname || !child_name || !income_source || !position) {
-    return res.status(400).json({ error: 'All candidate fields are required' });
+  if (!fullname || !child_name || !income_source) {
+    return res.status(400).json({ error: 'Fullname, child name, and income source are required' });
   }
 
   if (useSupabaseMode) {
@@ -612,10 +612,11 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
       child_name,
       income_source,
       income_details: income_details || '',
-      position
+      position: position || 'President'
     }]).select();
     if (!error) return res.json(data[0]);
-    console.error('Supabase save candidate failed:', error);
+    console.error('Supabase save candidate failed:', JSON.stringify(error, null, 2));
+    return res.status(500).json({ error: 'Supabase save candidate failed', details: error });
   }
 
   const newCand = {
