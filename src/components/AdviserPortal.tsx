@@ -37,6 +37,7 @@ export default function AdviserPortal() {
   const [candChild, setCandChild] = useState('');
   const [candIncomeSource, setCandIncomeSource] = useState<'Business' | 'Employment' | 'Other' | 'None'>('Employment');
   const [candIncomeDetails, setCandIncomeDetails] = useState('');
+  const [candPosition, setCandPosition] = useState<Position>('President');
   const [candidatePicture, setCandidatePicture] = useState<string | null>(null);
   
   // Bulk uploads raw text
@@ -176,6 +177,7 @@ export default function AdviserPortal() {
           child_name: candChild,
           income_source: candIncomeSource,
           income_details: candIncomeDetails,
+          position: candPosition,
           picture_data: candidatePicture
         })
       });
@@ -552,6 +554,17 @@ export default function AdviserPortal() {
                         className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
                         disabled={candIncomeSource === 'None'}
                       />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Position to Run For</label>
+                      <select
+                        value={candPosition}
+                        onChange={(e) => setCandPosition(e.target.value as Position)}
+                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
+                      >
+                        {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
                     </div>
 
                     <button
