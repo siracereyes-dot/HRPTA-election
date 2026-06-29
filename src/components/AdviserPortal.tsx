@@ -37,7 +37,6 @@ export default function AdviserPortal() {
   const [candChild, setCandChild] = useState('');
   const [candIncomeSource, setCandIncomeSource] = useState<'Business' | 'Employment' | 'Other' | 'None'>('Employment');
   const [candIncomeDetails, setCandIncomeDetails] = useState('');
-  const [candPosition, setCandPosition] = useState<Position>('President');
   const [candidatePicture, setCandidatePicture] = useState<string | null>(null);
   
   // Bulk uploads raw text
@@ -178,7 +177,7 @@ export default function AdviserPortal() {
           child_name: candChild,
           income_source: candIncomeSource,
           income_details: candIncomeDetails,
-          position: candPosition,
+          position: 'President',
           picture_data: candidatePicture
         })
       });
@@ -464,16 +463,6 @@ export default function AdviserPortal() {
             >
               Authentication student roster ({students.length})
             </button>
-            <button
-              onClick={() => setActivePortalTab('results')}
-              className={`pb-3 font-serif font-bold text-sm tracking-tight border-b-2 transition-all ${
-                activePortalTab === 'results'
-                  ? 'border-[#1e3a8a] text-[#1e3a8a]'
-                  : 'border-transparent text-[#475569] hover:text-[#0f172a]'
-              }`}
-            >
-              Classroom Live Results
-            </button>
           </div>
 
           {/* Tab 1: Candidates Management */}
@@ -555,17 +544,6 @@ export default function AdviserPortal() {
                         className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
                         disabled={candIncomeSource === 'None'}
                       />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Position to Run For</label>
-                      <select
-                        value={candPosition}
-                        onChange={(e) => setCandPosition(e.target.value as Position)}
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
-                      >
-                        {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-                      </select>
                     </div>
 
                     <button
@@ -756,83 +734,6 @@ export default function AdviserPortal() {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Tab 3: Real-Time Live Results */}
-          {activePortalTab === 'results' && (
-            <div className="bg-white rounded-[32px] shadow-sm border border-[#e2e8f0] p-6 space-y-6">
-              <div className="flex justify-between items-center pb-4 border-b border-[#f1f5f9]">
-                <div>
-                  <h3 className="font-serif font-bold text-[#1e3a8a] text-xl flex items-center gap-1.5">
-                    <BarChart3 className="text-[#1e3a8a] w-5 h-5" /> HRPTA Election Live Room Results
-                  </h3>
-                  <p className="text-xs text-[#475569]">Secure real-time votes are calculated on-the-fly and refreshed dynamically.</p>
-                </div>
-                <button
-                  onClick={fetchSectionData}
-                  className="flex items-center gap-1.5 bg-[#f1f5f9] hover:bg-[#cbd5e1] text-[#1e3a8a] text-xs font-bold px-3 py-1.5 rounded-lg transition-all border border-[#e2e8f0]"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh Results
-                </button>
-              </div>
-
-              {candidates.length === 0 ? (
-                <div className="py-16 text-center text-[#475569]">
-                  No candidates have been nominated yet, so no results can be logged.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {POSITIONS.map((position) => {
-                    // Calculate total votes for this position
-                    const positionVotesMap = (results?.positions?.[position] || {}) as Record<string, number>;
-                    const totalPosVotes = Object.values(positionVotesMap).reduce((a, b) => a + b, 0);
-
-                    // Sort candidates by their vote count for this position
-                    const sortedCandidatesForPos = [...candidates].sort((a, b) => {
-                      const votesA = positionVotesMap[a.id] || 0;
-                      const votesB = positionVotesMap[b.id] || 0;
-                      return votesB - votesA;
-                    });
-
-                    return (
-                      <div key={position} className="bg-[#f8fafc] rounded-2xl p-5 border border-[#e2e8f0] shadow-2xs">
-                        <div className="flex justify-between items-center mb-3 pb-2 border-b border-[#f1f5f9]">
-                          <h4 className="font-serif font-bold text-[#1e3a8a] text-sm tracking-tight">{position}</h4>
-                          <span className="text-[10px] bg-[#cbd5e1] text-[#1e3a8a] border border-[#1e3a8a]/10 font-serif font-bold px-2.5 py-0.5 rounded-full">
-                            {totalPosVotes} votes cast
-                          </span>
-                        </div>
-
-                        <div className="space-y-4">
-                          {sortedCandidatesForPos.map((c) => {
-                            const count = positionVotesMap[c.id] || 0;
-                            const percentage = totalPosVotes > 0 ? Math.round((count / totalPosVotes) * 100) : 0;
-
-                            return (
-                              <div key={c.id} className="space-y-1">
-                                <div className="flex justify-between items-center text-xs">
-                                  <div>
-                                    <span className="font-bold text-[#0f172a] block">{c.fullname}</span>
-                                    <span className="text-[10px] text-[#475569] block -mt-0.5">Child: {c.child_name}</span>
-                                  </div>
-                                  <span className="font-bold text-[#0f172a] font-mono text-sm">{count} votes ({percentage}%)</span>
-                                </div>
-                                <div className="w-full bg-[#f1f5f9] rounded-full h-2">
-                                  <div 
-                                    className="h-2 rounded-full bg-[#1e3a8a] transition-all duration-500"
-                                    style={{ width: `${percentage}%` }}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           )}
         </div>
