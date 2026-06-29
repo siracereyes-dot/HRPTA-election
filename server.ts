@@ -835,6 +835,43 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
   res.json(added);
 });
 
+// Delete student
+app.delete('/api/students/:id', async (req, res) => {
+  const { id } = req.params;
+  if (useSupabaseMode) {
+    const { error } = await supabase.from('hrpta_students').delete().eq('id', id);
+    if (!error) return res.json({ success: true });
+    console.error('Supabase delete student failed:', error);
+  }
+
+  mockStudents = mockStudents.filter(st => st.id !== id);
+  res.json({ success: true });
+});
+
+// Update student
+app.patch('/api/students/:id', async (req, res) => {
+  const { id } = req.params;
+  const { lrn, student_name } = req.body;
+
+  if (useSupabaseMode) {
+    const { data, error } = await supabase
+      .from('hrpta_students')
+      .update({ lrn, student_name })
+      .eq('id', id)
+      .select();
+    if (!error) return res.json(data[0]);
+    console.error('Supabase update student failed:', error);
+  }
+
+  const idx = mockStudents.findIndex(st => st.id === id);
+  if (idx !== -1) {
+    mockStudents[idx].lrn = lrn || mockStudents[idx].lrn;
+    mockStudents[idx].student_name = student_name || mockStudents[idx].student_name;
+    return res.json(mockStudents[idx]);
+  }
+  res.status(404).json({ error: 'Student not found' });
+});
+
 // 4. VOTER PORTAL ACTIONS
 app.post('/api/voter/authenticate', async (req, res) => {
   const { lrn } = req.body;

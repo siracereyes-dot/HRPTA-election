@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import imageCompression from 'browser-image-compression';
+import Swal from 'sweetalert2';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
-  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon
+  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon,
+  Pencil, Save, X
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Candidate, Student, Position, POSITIONS } from '../types';
@@ -43,6 +45,9 @@ export default function AdviserPortal() {
   const [bulkLrnInput, setBulkLrnInput] = useState('');
   const [bulkCandInput, setBulkCandInput] = useState('');
   
+  const [candidateError, setCandidateError] = useState('');
+  const [bulkCandidateError, setBulkCandidateError] = useState('');
+  
   const [uploadSuccess, setUploadSuccess] = useState({ students: false, candidates: false });
   const [activePortalTab, setActivePortalTab] = useState<'candidates' | 'students' | 'results'>('candidates');
   const [confirmModal, setConfirmModal] = useState<{
@@ -52,6 +57,11 @@ export default function AdviserPortal() {
     onConfirm: () => void;
   } | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
+  
+  // Student Editing
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editStudentLrn, setEditStudentLrn] = useState('');
+  const [editStudentName, setEditStudentName] = useState('');
 
   // Handle image compression
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,7 +83,12 @@ export default function AdviserPortal() {
       reader.readAsDataURL(compressedFile);
     } catch (error) {
       console.error(error);
-      alert("Failed to compress image.");
+      Swal.fire({
+        icon: 'error',
+        title: 'Image Compression Failed',
+        text: 'Failed to compress image. Please try a different photo.',
+        confirmButtonColor: '#1e3a8a'
+      });
     }
   };
 
@@ -164,9 +179,11 @@ export default function AdviserPortal() {
     e.preventDefault();
     if (!session) return;
     if (!candName.trim() || !candChild.trim()) {
-      alert('Candidate name and child name are required.');
+      setCandidateError('Candidate name and child name are required.');
       return;
     }
+
+    setCandidateError('');
 
     try {
       const res = await fetch(`/api/sections/${session.section.id}/candidates`, {
@@ -187,13 +204,15 @@ export default function AdviserPortal() {
         setCandChild('');
         setCandIncomeDetails('');
         setCandidatePicture(null);
+        setCandidateError('');
         fetchSectionData();
       } else {
         const error = await res.json();
-        alert(error.error || 'Failed to add candidate.');
+        setCandidateError(error.error || 'Failed to add candidate.');
       }
     } catch (err) {
       console.error('Error adding candidate:', err);
+      setCandidateError('Connection error. Please try again.');
     }
   };
 
@@ -211,6 +230,60 @@ export default function AdviserPortal() {
           console.error('Error deleting candidate:', err);
         }
         setConfirmModal(null);
+      }
+    });
+  };
+
+  // Update Student
+  const handleUpdateStudent = async (id: string) => {
+    if (!editStudentLrn.trim() || !editStudentName.trim()) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Validation Error',
+        text: 'LRN and Student Name cannot be empty.',
+        confirmButtonColor: '#1e3a8a'
+      });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/students/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lrn: editStudentLrn, student_name: editStudentName })
+      });
+      if (res.ok) {
+        setEditingStudentId(null);
+        fetchSectionData();
+      } else {
+        const error = await res.json();
+        Swal.fire({
+          icon: 'error',
+          title: 'Update Failed',
+          text: error.error || 'Failed to update student record.',
+          confirmButtonColor: '#1e3a8a'
+        });
+      }
+    } catch (err) {
+      console.error('Error updating student:', err);
+    }
+  };
+
+  // Delete Student
+  const handleDeleteStudent = (id: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Student Record',
+      message: 'Are you sure you want to remove this student from the authorized roster? This will prevent the associated parent from voting using this LRN.',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            setConfirmModal(null);
+            fetchSectionData();
+          }
+        } catch (err) {
+          console.error(err);
+        }
       }
     });
   };
@@ -240,7 +313,12 @@ export default function AdviserPortal() {
     });
 
     if (studentList.length === 0) {
-      alert('Could not parse any valid student LRNS. Make sure each line has at least an LRN.');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Empty List',
+        text: 'Could not parse any valid student LRNS. Make sure each line has at least an LRN.',
+        confirmButtonColor: '#1e3a8a'
+      });
       return;
     }
 
@@ -258,7 +336,12 @@ export default function AdviserPortal() {
         setTimeout(() => setUploadSuccess(prev => ({ ...prev, students: false })), 3000);
       } else {
         const error = await res.json();
-        alert(error.error || 'Failed to upload student roster.');
+        Swal.fire({
+          icon: 'error',
+          title: 'Upload Failed',
+          text: error.error || 'Failed to upload student roster.',
+          confirmButtonColor: '#1e3a8a'
+        });
       }
     } catch (err) {
       console.error('Error bulk uploading students:', err);
@@ -294,9 +377,11 @@ export default function AdviserPortal() {
     });
 
     if (parsedCandidates.length === 0) {
-      alert('Could not parse any candidates. Verify the format is correct (FullName, ChildName, IncomeSource, IncomeDetails).');
+      setBulkCandidateError('Could not parse any candidates. Verify the format is correct (FullName, ChildName, IncomeSource, IncomeDetails).');
       return;
     }
+
+    setBulkCandidateError('');
 
     try {
       const res = await fetch(`/api/sections/${session.section.id}/candidates/bulk`, {
@@ -307,15 +392,17 @@ export default function AdviserPortal() {
 
       if (res.ok) {
         setBulkCandInput('');
+        setBulkCandidateError('');
         setUploadSuccess(prev => ({ ...prev, candidates: true }));
         fetchSectionData();
         setTimeout(() => setUploadSuccess(prev => ({ ...prev, candidates: false })), 3000);
       } else {
         const error = await res.json();
-        alert(error.error || 'Failed to bulk upload candidates.');
+        setBulkCandidateError(error.error || 'Failed to bulk upload candidates.');
       }
     } catch (err) {
       console.error('Bulk candidate upload error:', err);
+      setBulkCandidateError('Connection error. Please try again.');
     }
   };
 
@@ -556,12 +643,19 @@ export default function AdviserPortal() {
                       />
                     </div>
 
-                    <button
-                      type="submit"
-                      className="w-full bg-[#1e3a8a] hover:bg-[#172554] text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all shadow-xs"
-                    >
-                      Nominate Candidate
-                    </button>
+                  {candidateError && (
+                    <div className="p-3 bg-amber-50 text-amber-800 text-[11px] rounded-lg font-semibold border border-amber-100 flex items-start gap-2 mb-2 animate-in fade-in slide-in-from-top-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>{candidateError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full bg-[#1e3a8a] hover:bg-[#172554] text-white font-bold py-2.5 px-4 rounded-xl text-sm transition-all shadow-xs"
+                  >
+                    Nominate Candidate
+                  </button>
                   </form>
                 </div>
 
@@ -588,6 +682,13 @@ export default function AdviserPortal() {
                       rows={5}
                       className="w-full text-xs font-mono border border-[#e2e8f0] bg-[#f8fafc] rounded-xl p-3 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
                     />
+
+                    {bulkCandidateError && (
+                      <div className="p-3 bg-amber-50 text-amber-800 text-[11px] rounded-lg font-semibold border border-amber-100 flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                        <span>{bulkCandidateError}</span>
+                      </div>
+                    )}
 
                     <button
                       type="submit"
@@ -726,16 +827,79 @@ export default function AdviserPortal() {
                       <tbody className="divide-y divide-[#f1f5f9] text-sm text-[#0f172a]">
                         {students.map((student) => (
                           <tr key={student.id} className="hover:bg-[#f8fafc] transition-colors">
-                            <td className="px-6 py-3.5 font-bold text-[#0f172a]">{student.student_name}</td>
-                            <td className="px-6 py-3.5 font-mono text-[#475569] select-all">{student.lrn}</td>
-                            <td className="px-6 py-3.5 text-right">
-                              <span className={`inline-block text-xs font-bold px-2.5 py-1 rounded-lg border ${
-                                student.has_voted 
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                                  : 'bg-amber-50 text-amber-700 border-amber-100'
-                              }`}>
-                                {student.has_voted ? 'Voted' : 'Not Voted'}
-                              </span>
+                            <td className="px-6 py-3.5 font-bold text-[#0f172a]">
+                              {editingStudentId === student.id ? (
+                                <input 
+                                  type="text"
+                                  value={editStudentName}
+                                  onChange={(e) => setEditStudentName(e.target.value)}
+                                  className="w-full text-xs font-bold border border-[#e2e8f0] rounded-lg px-2 py-1 focus:ring-2 focus:ring-[#1e3a8a] outline-hidden"
+                                />
+                              ) : (
+                                student.student_name
+                              )}
+                            </td>
+                            <td className="px-6 py-3.5 font-mono text-[#475569] select-all">
+                              {editingStudentId === student.id ? (
+                                <input 
+                                  type="text"
+                                  value={editStudentLrn}
+                                  onChange={(e) => setEditStudentLrn(e.target.value)}
+                                  className="w-full text-xs font-mono border border-[#e2e8f0] rounded-lg px-2 py-1 focus:ring-2 focus:ring-[#1e3a8a] outline-hidden"
+                                />
+                              ) : (
+                                student.lrn
+                              )}
+                            </td>
+                            <td className="px-6 py-3.5 text-right flex items-center justify-end gap-2">
+                              {editingStudentId === student.id ? (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdateStudent(student.id)}
+                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                                    title="Save Changes"
+                                  >
+                                    <Save className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingStudentId(null)}
+                                    className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-md border mr-2 ${
+                                    student.has_voted 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
+                                      : 'bg-amber-50 text-amber-700 border-amber-100'
+                                  }`}>
+                                    {student.has_voted ? 'Voted' : 'Not Voted'}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      setEditingStudentId(student.id);
+                                      setEditStudentLrn(student.lrn);
+                                      setEditStudentName(student.student_name);
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-[#1e3a8a] hover:bg-[#f1f5f9] rounded-lg transition-all"
+                                    title="Edit Student"
+                                    disabled={student.has_voted}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteStudent(student.id)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                    title="Delete Student"
+                                    disabled={student.has_voted}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
                             </td>
                           </tr>
                         ))}

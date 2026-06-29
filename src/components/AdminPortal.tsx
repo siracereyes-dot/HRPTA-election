@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
@@ -303,7 +304,12 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
     e.preventDefault();
     if (!selectedElection) return;
     if (!newSectionName.trim() || !newAdviserName.trim() || !newAdviserPasscode.trim()) {
-      alert('All section details are required.');
+      Swal.fire({
+        icon: 'warning',
+        title: 'Missing Details',
+        text: 'All section details (Name, Adviser, and Passcode) are required.',
+        confirmButtonColor: '#1e3a8a'
+      });
       return;
     }
 
@@ -325,7 +331,12 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
         fetchElectionData();
       } else {
         const error = await res.json();
-        alert(error.error || 'Failed to create section');
+        Swal.fire({
+          icon: 'error',
+          title: 'Section Creation Failed',
+          text: error.error || 'Failed to create section.',
+          confirmButtonColor: '#1e3a8a'
+        });
       }
     } catch (err) {
       console.error('Error creating section:', err);
@@ -335,7 +346,12 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   const handleBulkSectionUpload = async () => {
     if (!selectedElection) return;
     if (!bulkSectionText.trim()) {
-      alert('Please paste some section data first.');
+      Swal.fire({
+        icon: 'info',
+        title: 'Empty Input',
+        text: 'Please paste some section data first.',
+        confirmButtonColor: '#1e3a8a'
+      });
       return;
     }
 
@@ -376,7 +392,16 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
     setIsProcessingBulk(false);
     setBulkSectionText('');
     fetchElectionData();
-    alert(`Bulk processing complete!\nSuccess: ${successCount}\nFailed: ${failCount}`);
+    
+    Swal.fire({
+      icon: successCount > 0 ? 'success' : 'info',
+      title: 'Bulk Processing Complete',
+      html: `<div class="text-left font-mono text-sm">
+              <p class="text-emerald-600 font-bold">Successfully imported: ${successCount}</p>
+              <p class="text-rose-600 font-bold">Failed: ${failCount}</p>
+             </div>`,
+      confirmButtonColor: '#1e3a8a'
+    });
   };
 
   const exportAllResults = async () => {
@@ -432,7 +457,12 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
       document.body.removeChild(link);
     } catch (err) {
       console.error('Error exporting results:', err);
-      alert('Failed to export results. Please try again.');
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: 'Failed to export results. Please try again.',
+        confirmButtonColor: '#1e3a8a'
+      });
     } finally {
       setLoadingResults(false);
     }
