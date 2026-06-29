@@ -55,6 +55,8 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
   const [newSectionName, setNewSectionName] = useState('');
   const [newAdviserName, setNewAdviserName] = useState('');
   const [newAdviserPasscode, setNewAdviserPasscode] = useState('');
+  const [bulkSectionText, setBulkSectionText] = useState('');
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   
   const [copiedSql, setCopiedSql] = useState(false);
   const [showPasscodes, setShowPasscodes] = useState<{ [secId: string]: boolean }>({});
@@ -328,6 +330,53 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
     } catch (err) {
       console.error('Error creating section:', err);
     }
+  };
+
+  const handleBulkSectionUpload = async () => {
+    if (!selectedElection) return;
+    if (!bulkSectionText.trim()) {
+      alert('Please paste some section data first.');
+      return;
+    }
+
+    setIsProcessingBulk(true);
+    const lines = bulkSectionText.split('\n').filter(line => line.trim());
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const line of lines) {
+      const parts = line.split(',').map(p => p.trim());
+      if (parts.length < 4) {
+        failCount++;
+        continue;
+      }
+
+      const [sectionName, gradeLevel, adviserName, passcode] = parts;
+
+      try {
+        const res = await fetch(`/api/elections/${selectedElection.id}/sections`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grade_level: gradeLevel,
+            section_name: sectionName,
+            adviser_name: adviserName,
+            adviser_passcode: passcode
+          })
+        });
+
+        if (res.ok) successCount++;
+        else failCount++;
+      } catch (err) {
+        console.error('Error processing bulk line:', err);
+        failCount++;
+      }
+    }
+
+    setIsProcessingBulk(false);
+    setBulkSectionText('');
+    fetchElectionData();
+    alert(`Bulk processing complete!\nSuccess: ${successCount}\nFailed: ${failCount}`);
   };
 
   const deleteSection = async (id: string) => {
@@ -1045,6 +1094,61 @@ INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026')
                           </button>
                         </div>
                       </form>
+                    </div>
+                    
+                    {/* Bulk Section Upload */}
+                    <div className="bg-white rounded-[24px] p-6 shadow-sm border border-[#e2e8f0]">
+                      <div className="flex items-center gap-2 mb-4">
+                        <FileText className="text-[#1e3a8a] w-5 h-5" />
+                        <h3 className="text-base font-serif font-bold text-[#1e3a8a]">
+                          Bulk Homeroom Section Upload
+                        </h3>
+                      </div>
+                      
+                      <p className="text-sm text-[#475569] mb-4">
+                        Paste sections comma-separated. One section per line.
+                      </p>
+
+                      <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl p-4 mb-4">
+                        <p className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-2 font-mono">Format per line:</p>
+                        <p className="text-xs text-[#64748b] font-mono mb-3">SectionName, GradeLevel, AdviserName, Passcode</p>
+                        
+                        <p className="text-xs font-bold text-[#475569] uppercase tracking-wider mb-2 font-mono">Example:</p>
+                        <div className="text-xs text-[#64748b] font-mono space-y-1">
+                          <p>Diamond, Grade 7, Juana Santos, 1234</p>
+                          <p>Emerald, Grade 8, Rey Reyes, 5678</p>
+                        </div>
+                      </div>
+
+                      <textarea
+                        value={bulkSectionText}
+                        onChange={(e) => setBulkSectionText(e.target.value)}
+                        placeholder="Diamond, Grade 7, Juana Santos, 1234..."
+                        className="w-full h-32 text-sm font-mono border border-[#e2e8f0] bg-[#f8fafc] text-[#0f172a] rounded-xl px-4 py-3 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] mb-4"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleBulkSectionUpload}
+                        disabled={isProcessingBulk || !bulkSectionText.trim()}
+                        className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-xs flex items-center justify-center gap-2 ${
+                          isProcessingBulk || !bulkSectionText.trim()
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'bg-[#1e3a8a] hover:bg-[#172554] text-white'
+                        }`}
+                      >
+                        {isProcessingBulk ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-4 h-4" />
+                            Bulk Create Sections
+                          </>
+                        )}
+                      </button>
                     </div>
 
                     {/* Sections & Monitoring List */}
