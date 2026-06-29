@@ -566,7 +566,7 @@ export default function AdviserPortal() {
 
             <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 shadow-sm flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-[#475569] uppercase tracking-wider block">Registered Roster</span>
+                <span className="text-xs font-semibold text-[#475569] uppercase tracking-wider block">Register Student LRN</span>
                 <span className="text-3xl font-serif text-[#1e3a8a] mt-1 block">{students.length} students</span>
               </div>
               <div className="w-10 h-10 bg-[#f1f5f9] text-[#1e3a8a] rounded-xl border border-[#e2e8f0] flex items-center justify-center">
@@ -578,12 +578,45 @@ export default function AdviserPortal() {
               <div>
                 <span className="text-xs font-semibold text-[#475569] uppercase tracking-wider block">Voter turnout</span>
                 <span className="text-3xl font-serif text-[#1e3a8a] mt-1 block">
-                  {students.filter(s => s.has_voted).length} / {students.length} ({students.length > 0 ? Math.round((students.filter(s => s.has_voted).length / students.length) * 100) : 0}%)
+                  {students.filter(s => s.has_voted).length} / {students.length}
                 </span>
               </div>
               <div className="w-10 h-10 bg-[#f1f5f9] text-[#1e3a8a] rounded-xl border border-[#e2e8f0] flex items-center justify-center">
                 <BarChart3 className="w-5 h-5" />
               </div>
+            </div>
+          </div>
+
+          {/* Voting Participation Progress Bar */}
+          <div className="bg-white rounded-[24px] border border-[#e2e8f0] p-6 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="font-serif font-bold text-[#1e3a8a] text-lg tracking-tight">Ballot Completion Progress</h3>
+                <p className="text-xs text-[#475569]">Percentage of students who have completed their ballots for your section.</p>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-serif font-bold text-[#1e3a8a]">
+                  {students.length > 0 ? Math.round((students.filter(s => s.has_voted).length / students.length) * 100) : 0}%
+                </span>
+                <span className="text-[10px] text-[#475569] uppercase font-bold tracking-widest block">Participation Rate</span>
+              </div>
+            </div>
+            
+            <div className="w-full h-4 bg-[#f1f5f9] rounded-full overflow-hidden border border-[#e2e8f0] relative">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${students.length > 0 ? (students.filter(s => s.has_voted).length / students.length) * 100 : 0}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+                className="h-full bg-linear-to-r from-[#1e3a8a] to-[#3b82f6] shadow-inner relative"
+              >
+                <div className="absolute inset-0 bg-white/10" style={{ backgroundSize: '20px 20px', backgroundImage: 'linear-gradient(45deg, rgba(255,255,255,.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,.15) 50%, rgba(255,255,255,.15) 75%, transparent 75%, transparent)' }}></div>
+              </motion.div>
+            </div>
+            
+            <div className="flex justify-between mt-2 text-[10px] font-bold uppercase tracking-widest text-[#475569]">
+              <span>0% Started</span>
+              <span>50% Midpoint</span>
+              <span>100% Complete</span>
             </div>
           </div>
 

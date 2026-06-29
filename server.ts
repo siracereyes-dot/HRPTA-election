@@ -904,39 +904,61 @@ app.post('/api/voter/authenticate', async (req, res) => {
 
   if (useSupabaseMode) {
     // Lookup student by LRN
-    const { data: student, error: studErr } = await supabase
-      .from('hrpta_students')
-      .select('*, hrpta_sections(*)')
-      .eq('lrn', cleanLrn)
-      .limit(1);
+    try {
+      const { data: students, error: studErr } = await supabase
+        .from('hrpta_students')
+        .select('*, hrpta_sections(*)')
+        .eq('lrn', cleanLrn)
+        .limit(1);
 
-    if (!studErr && student && student.length > 0) {
-      const targetStudent = student[0];
-      const targetSection = targetStudent.hrpta_sections;
-      
-      if (targetStudent.has_voted) {
-        return res.status(403).json({ error: 'Our records show that the household vote for this LRN has already been cast.' });
+      if (studErr) {
+        console.error('Supabase student lookup error:', studErr);
+        throw studErr;
       }
-      
-      // Fetch election info
-      const { data: election, error: elecErr } = await supabase
-        .from('hrpta_elections')
-        .select('*')
-        .eq('id', targetSection.election_id)
-        .single();
 
-      if (!elecErr && election) {
-        if (election.status === 'closed') {
-          return res.status(403).json({ error: 'This election has already closed.' });
+      if (students && students.length > 0) {
+        const targetStudent = students[0];
+        const targetSection = targetStudent.hrpta_sections;
+        
+        if (!targetSection) {
+          console.error('Student found but section record is missing in Supabase join:', targetStudent.id);
+          // Fall through to sandbox check if orphaned in Supabase
+        } else {
+          if (targetStudent.has_voted) {
+            return res.status(403).json({ error: 'Our records show that the household vote for this LRN has already been cast.' });
+          }
+          
+          // Fetch election info
+          const { data: election, error: elecErr } = await supabase
+            .from('hrpta_elections')
+            .select('*')
+            .eq('id', targetSection.election_id)
+            .single();
+
+          if (elecErr) {
+            console.error('Supabase election lookup error:', elecErr);
+            // If it's a "not found" error, we might still want to fall through or handle it
+            if (elecErr.code === 'PGRST116') {
+               console.warn('Election missing for section:', targetSection.id);
+            } else {
+               throw elecErr;
+            }
+          } else if (election) {
+            if (election.status === 'closed') {
+              return res.status(403).json({ error: 'This election has already closed.' });
+            }
+            return res.json({
+              student: targetStudent,
+              section: targetSection,
+              election
+            });
+          }
         }
-        return res.json({
-          student: targetStudent,
-          section: targetSection,
-          election
-        });
       }
+    } catch (err: any) {
+      console.error('Supabase voter authentication fatal error:', err);
+      // We log but continue to Sandbox fallback just in case
     }
-    console.error('Supabase voter authentication failed:', studErr);
   }
 
   // Sandbox Fallback
