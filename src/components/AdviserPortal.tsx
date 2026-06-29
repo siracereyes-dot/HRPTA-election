@@ -52,6 +52,7 @@ export default function AdviserPortal() {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
 
   // Handle image compression
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -630,6 +631,14 @@ export default function AdviserPortal() {
                       <div key={c.id} className="p-4 flex items-start justify-between hover:bg-[#f8fafc] transition-colors">
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
+                            {c.picture_data && (
+                              <img 
+                                src={c.picture_data} 
+                                alt={c.fullname} 
+                                className="w-10 h-10 rounded-full object-cover cursor-pointer hover:ring-2 hover:ring-[#1e3a8a] transition-all"
+                                onClick={() => setEnlargedImage(c.picture_data)}
+                              />
+                            )}
                             <span className="font-bold text-[#0f172a]">{c.fullname}</span>
                             <span className="text-[10px] font-bold uppercase bg-[#f1f5f9] text-[#1e3a8a] border border-[#e2e8f0] px-2.5 py-0.5 rounded-full">
                               Nominee
@@ -826,6 +835,18 @@ export default function AdviserPortal() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {enlargedImage && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50" onClick={() => setEnlargedImage(null)}>
+          <motion.img
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            src={enlargedImage}
+            alt="Enlarged"
+            className="max-w-full max-h-[80vh] rounded-2xl shadow-2xl"
+          />
         </div>
       )}
 
