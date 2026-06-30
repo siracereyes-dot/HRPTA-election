@@ -338,10 +338,19 @@ export default function VoterPortal() {
                               <span className="text-xs text-[#475569] block mt-0.5 font-medium">Parent of {c.child_name}</span>
                             </div>
 
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
-                              isAssigned ? 'border-[#1e3a8a] bg-[#1e3a8a]' : 'border-[#e2e8f0]'
-                            }`}>
-                              {isAssigned && <span className="w-2 h-2 rounded-full bg-white" />}
+                            <div className="flex items-center gap-3">
+                              {c.picture_data && (
+                                <img 
+                                  src={c.picture_data} 
+                                  alt={c.fullname} 
+                                  className="w-10 h-10 rounded-lg object-cover border border-[#e2e8f0]"
+                                />
+                              )}
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                                isAssigned ? 'border-[#1e3a8a] bg-[#1e3a8a]' : 'border-[#e2e8f0]'
+                              }`}>
+                                {isAssigned && <span className="w-2 h-2 rounded-full bg-white" />}
+                              </div>
                             </div>
                           </div>
 

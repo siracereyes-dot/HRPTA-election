@@ -152,6 +152,10 @@ const SQL_SCHEMA = `
 -- HRPTA VOTING SYSTEM DATABASE SCHEMA
 -- Copy and run this script in your Supabase SQL Editor
 
+-- ==========================================
+-- NEW SETUP (Run this if starting fresh)
+-- ==========================================
+
 -- 1. Elections Table
 CREATE TABLE IF NOT EXISTS hrpta_elections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -207,14 +211,32 @@ CREATE TABLE IF NOT EXISTS hrpta_votes (
   CONSTRAINT unique_student_position UNIQUE (student_id, position)
 );
 
--- Enable RLS on all tables (allow public reads/writes via Service Role / Anon for simplicity in this demo system)
+-- 6. Admin Accounts Table
+CREATE TABLE IF NOT EXISTS hrpta_admin (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  username TEXT NOT NULL UNIQUE,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 7. Activity Logs Table
+CREATE TABLE IF NOT EXISTS hrpta_activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  activity_type TEXT NOT NULL,
+  details TEXT,
+  election_id UUID REFERENCES hrpta_elections(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- RLS & Policies
 ALTER TABLE hrpta_elections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hrpta_sections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hrpta_candidates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hrpta_students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hrpta_votes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hrpta_admin ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hrpta_activity_logs ENABLE ROW LEVEL SECURITY;
 
--- Disable restrict rules for public anonymous access to make implementation straightforward
 CREATE POLICY "Allow public select" ON hrpta_elections FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_elections FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update" ON hrpta_elections FOR UPDATE USING (true);
@@ -238,36 +260,25 @@ CREATE POLICY "Allow public delete" ON hrpta_students FOR DELETE USING (true);
 CREATE POLICY "Allow public select" ON hrpta_votes FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_votes FOR INSERT WITH CHECK (true);
 
--- 6. Admin Accounts Table
-CREATE TABLE IF NOT EXISTS hrpta_admin (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
--- 7. Activity Logs Table
-CREATE TABLE IF NOT EXISTS hrpta_activity_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  election_id UUID REFERENCES hrpta_elections(id) ON DELETE CASCADE,
-  activity_type TEXT NOT NULL,
-  details TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-ALTER TABLE hrpta_admin ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public select" ON hrpta_admin FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_admin FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update" ON hrpta_admin FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete" ON hrpta_admin FOR DELETE USING (true);
 
-ALTER TABLE hrpta_activity_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public select" ON hrpta_activity_logs FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_activity_logs FOR INSERT WITH CHECK (true);
 
 -- Insert default admin account
 INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;
+
+-- ==========================================
+-- MIGRATIONS (Run these on existing tables)
+-- ==========================================
+
+-- If you get "Could not find column picture_data", run this:
+-- ALTER TABLE hrpta_candidates ADD COLUMN IF NOT EXISTS picture_data TEXT;
 `;
+
 
 // ================= API ENDPOINTS =================
 
@@ -648,6 +659,34 @@ app.delete('/api/sections/:id', async (req, res) => {
     mockStudents = mockStudents.filter(st => st.section_id !== id);
   }
   res.json({ success: true });
+});
+
+app.put('/api/sections/:id', async (req, res) => {
+  const { id } = req.params;
+  const { grade_level, section_name, adviser_name, adviser_passcode } = req.body;
+
+  if (useSupabaseMode) {
+    const { data, error } = await supabase
+      .from('hrpta_sections')
+      .update({ grade_level, section_name, adviser_name, adviser_passcode })
+      .eq('id', id)
+      .select();
+    
+    if (!error && data && data.length > 0) {
+      logActivity('Section Updated', `Admin updated details for section "${grade_level} - ${section_name}".`, data[0].election_id);
+      return res.json(data[0]);
+    }
+    console.error('Supabase update section failed:', error);
+    return res.status(500).json({ error: error?.message || 'Update failed' });
+  }
+
+  const idx = mockSections.findIndex(s => s.id === id);
+  if (idx !== -1) {
+    mockSections[idx] = { ...mockSections[idx], grade_level, section_name, adviser_name, adviser_passcode };
+    logActivity('Section Updated', `Admin updated details for section "${grade_level} - ${section_name}" (Sandbox).`, mockSections[idx].election_id);
+    return res.json(mockSections[idx]);
+  }
+  res.status(404).json({ error: 'Section not found' });
 });
 
 // 3. ADVISER PORTAL & ACTIONS

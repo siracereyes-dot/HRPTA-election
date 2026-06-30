@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
   Printer, Award, FileText, ChevronRight, LogIn, LogOut, Lock, Download, FileSpreadsheet,
-  History, Activity
+  History, Activity, Edit2, X, CheckCircle2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate, ActivityLog } from '../types';
@@ -135,6 +135,63 @@ export default function AdminPortal() {
       setLoginError('Error connecting to the login server');
     } finally {
       setLoggingIn(false);
+    }
+  };
+
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editGradeLevel, setEditGradeLevel] = useState('');
+  const [editSectionName, setEditSectionName] = useState('');
+  const [editAdviserName, setEditAdviserName] = useState('');
+  const [editAdviserPasscode, setEditAdviserPasscode] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const startEditing = (section: Section) => {
+    setEditingSectionId(section.id);
+    setEditGradeLevel(section.grade_level);
+    setEditSectionName(section.section_name);
+    setEditAdviserName(section.adviser_name);
+    setEditAdviserPasscode(section.adviser_passcode);
+  };
+
+  const cancelEditing = () => {
+    setEditingSectionId(null);
+  };
+
+  const saveSectionEdit = async (id: string) => {
+    setIsSavingEdit(true);
+    try {
+      const res = await fetch(`/api/sections/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grade_level: editGradeLevel,
+          section_name: editSectionName,
+          adviser_name: editAdviserName,
+          adviser_passcode: editAdviserPasscode
+        })
+      });
+      if (res.ok) {
+        setEditingSectionId(null);
+        fetchElectionData();
+        Swal.fire({
+          icon: 'success',
+          title: 'Section Updated',
+          text: 'The section details have been saved successfully.',
+          timer: 1500,
+          showConfirmButton: false
+        });
+      } else {
+        const err = await res.json();
+        throw new Error(err.error || 'Update failed');
+      }
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Update Failed',
+        text: err.message
+      });
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -1320,25 +1377,69 @@ export default function AdminPortal() {
                                   voted_students: 0,
                                   participation_rate: 0
                                 };
+                                const isEditing = editingSectionId === section.id;
                                 return (
-                                  <tr key={section.id} className="hover:bg-[#f8fafc] transition-colors">
+                                  <tr key={section.id} className={`${isEditing ? 'bg-blue-50/50' : 'hover:bg-[#f8fafc]'} transition-colors`}>
                                     <td className="px-6 py-4 font-bold text-[#0f172a]">
-                                      {section.grade_level} - {section.section_name}
+                                      {isEditing ? (
+                                        <div className="flex flex-col gap-1.5">
+                                          <select
+                                            value={editGradeLevel}
+                                            onChange={(e) => setEditGradeLevel(e.target.value)}
+                                            className="text-xs border border-[#e2e8f0] bg-white rounded-lg px-2 py-1.5 w-full focus:outline-hidden focus:ring-1 focus:ring-[#1e3a8a]"
+                                          >
+                                            <option value="Grade 7">Grade 7</option>
+                                            <option value="Grade 8">Grade 8</option>
+                                            <option value="Grade 9">Grade 9</option>
+                                            <option value="Grade 10">Grade 10</option>
+                                            <option value="Grade 11">Grade 11</option>
+                                            <option value="Grade 12">Grade 12</option>
+                                          </select>
+                                          <input 
+                                            value={editSectionName}
+                                            onChange={(e) => setEditSectionName(e.target.value)}
+                                            className="text-xs border border-[#e2e8f0] bg-white rounded-lg px-2 py-1.5 w-full focus:outline-hidden focus:ring-1 focus:ring-[#1e3a8a]"
+                                            placeholder="Section Name"
+                                          />
+                                        </div>
+                                      ) : (
+                                        <>{section.grade_level} - {section.section_name}</>
+                                      )}
                                     </td>
                                     <td className="px-6 py-4 text-[#475569]">
-                                      {section.adviser_name}
+                                      {isEditing ? (
+                                        <input 
+                                          value={editAdviserName}
+                                          onChange={(e) => setEditAdviserName(e.target.value)}
+                                          className="text-xs border border-[#e2e8f0] bg-white rounded-lg px-2 py-1.5 w-full focus:outline-hidden focus:ring-1 focus:ring-[#1e3a8a]"
+                                          placeholder="Adviser Name"
+                                        />
+                                      ) : (
+                                        section.adviser_name
+                                      )}
                                     </td>
                                     <td className="px-6 py-4 text-[#475569] font-mono">
                                       <div className="flex items-center gap-1.5">
-                                        <span>
-                                          {showPasscodes[section.id] ? section.adviser_passcode : '••••'}
-                                        </span>
-                                        <button 
-                                          onClick={() => togglePasscodeVisibility(section.id)}
-                                          className="text-[#475569] hover:text-[#0f172a]"
-                                        >
-                                          {showPasscodes[section.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                                        </button>
+                                        {isEditing ? (
+                                          <input 
+                                            value={editAdviserPasscode}
+                                            onChange={(e) => setEditAdviserPasscode(e.target.value)}
+                                            className="text-xs border border-[#e2e8f0] bg-white rounded-lg px-2 py-1.5 w-20 focus:outline-hidden focus:ring-1 focus:ring-[#1e3a8a]"
+                                            placeholder="Passcode"
+                                          />
+                                        ) : (
+                                          <>
+                                            <span>
+                                              {showPasscodes[section.id] ? section.adviser_passcode : '••••'}
+                                            </span>
+                                            <button 
+                                              onClick={() => togglePasscodeVisibility(section.id)}
+                                              className="text-[#475569] hover:text-[#0f172a]"
+                                            >
+                                              {showPasscodes[section.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                            </button>
+                                          </>
+                                        )}
                                       </div>
                                     </td>
                                     <td className="px-6 py-4">
@@ -1362,13 +1463,44 @@ export default function AdminPortal() {
                                       </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                      <button
-                                        onClick={() => deleteSection(section.id)}
-                                        className="text-[#475569] hover:text-red-600 p-1.5 rounded-lg hover:bg-[#f1f5f9] transition-all inline-block"
-                                        title="Delete Section Room"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
+                                      <div className="flex items-center justify-end gap-1">
+                                        {isEditing ? (
+                                          <>
+                                            <button
+                                              onClick={() => saveSectionEdit(section.id)}
+                                              disabled={isSavingEdit}
+                                              className="text-emerald-600 hover:bg-emerald-50 p-1.5 rounded-lg transition-all"
+                                              title="Save Changes"
+                                            >
+                                              {isSavingEdit ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                            </button>
+                                            <button
+                                              onClick={cancelEditing}
+                                              className="text-rose-600 hover:bg-rose-50 p-1.5 rounded-lg transition-all"
+                                              title="Cancel Edit"
+                                            >
+                                              <X className="w-4 h-4" />
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => startEditing(section)}
+                                              className="text-[#475569] hover:text-[#1e3a8a] p-1.5 rounded-lg hover:bg-[#f1f5f9] transition-all"
+                                              title="Edit Section Details"
+                                            >
+                                              <Edit2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                              onClick={() => deleteSection(section.id)}
+                                              className="text-[#475569] hover:text-red-600 p-1.5 rounded-lg hover:bg-[#f1f5f9] transition-all inline-block"
+                                              title="Delete Section Room"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
                                     </td>
                                   </tr>
                                 );
