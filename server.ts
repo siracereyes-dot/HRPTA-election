@@ -54,16 +54,16 @@ let mockSections: any[] = [
 
 let mockCandidates: any[] = [
   // Section Amber
-  { id: 'c1', section_id: 's1', fullname: 'Antonio Santos Sr.', child_name: 'Antonio Santos Jr.', position: 'President' },
-  { id: 'c2', section_id: 's1', fullname: 'Maria Leonor Cruz', child_name: 'Angelica Cruz', position: 'President' },
-  { id: 'c3', section_id: 's1', fullname: 'Joseph Reyes', child_name: 'Mark Reyes', position: 'Vice President' },
-  { id: 'c4', section_id: 's1', fullname: 'Grace Dela Cruz', child_name: 'John Dela Cruz', position: 'Secretary' },
-  { id: 'c5', section_id: 's1', fullname: 'Fernando Jose', child_name: 'Therese Jose', position: 'Treasurer' },
-  { id: 'c6', section_id: 's1', fullname: 'Christina Almeda', child_name: 'Christian Almeda', position: 'Auditor' },
+  { id: 'c1', section_id: 's1', fullname: 'Antonio Santos Sr.', child_name: 'Antonio Santos Jr.', position: 'President', picture_data: null },
+  { id: 'c2', section_id: 's1', fullname: 'Maria Leonor Cruz', child_name: 'Angelica Cruz', position: 'President', picture_data: null },
+  { id: 'c3', section_id: 's1', fullname: 'Joseph Reyes', child_name: 'Mark Reyes', position: 'Vice President', picture_data: null },
+  { id: 'c4', section_id: 's1', fullname: 'Grace Dela Cruz', child_name: 'John Dela Cruz', position: 'Secretary', picture_data: null },
+  { id: 'c5', section_id: 's1', fullname: 'Fernando Jose', child_name: 'Therese Jose', position: 'Treasurer', picture_data: null },
+  { id: 'c6', section_id: 's1', fullname: 'Christina Almeda', child_name: 'Christian Almeda', position: 'Auditor', picture_data: null },
   
   // Section Birch
-  { id: 'c201', section_id: 's2', fullname: 'David Vance', child_name: 'James Vance', position: 'President' },
-  { id: 'c202', section_id: 's2', fullname: 'Jane Carter', child_name: 'Sarah Carter', position: 'President' }
+  { id: 'c201', section_id: 's2', fullname: 'David Vance', child_name: 'James Vance', position: 'President', picture_data: null },
+  { id: 'c202', section_id: 's2', fullname: 'Jane Carter', child_name: 'Sarah Carter', position: 'President', picture_data: null }
 ];
 
 let mockStudents: any[] = [
@@ -177,6 +177,9 @@ CREATE TABLE IF NOT EXISTS hrpta_candidates (
   section_id UUID REFERENCES hrpta_sections(id) ON DELETE CASCADE,
   fullname TEXT NOT NULL,
   child_name TEXT NOT NULL,
+  picture_data TEXT,
+  income_source TEXT DEFAULT 'None',
+  income_details TEXT DEFAULT '',
   position TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -435,6 +438,7 @@ app.post('/api/admin/login', async (req, res) => {
         .limit(1);
 
       if (!error && data && data.length > 0) {
+        logActivity('Admin Login', `Administrator logged in from dashboard.`, undefined);
         return res.json({ success: true, user: { username: data[0].username } });
       }
     } catch (err) {
@@ -444,10 +448,12 @@ app.post('/api/admin/login', async (req, res) => {
 
   const found = mockAdminAccounts.find(a => a.username === username && a.password === password);
   if (found) {
+    logActivity('Admin Login', `Administrator logged in from dashboard (Sandbox).`, undefined);
     return res.json({ success: true, user: { username: found.username } });
   }
 
   if (username === 'admin' && password === 'RMCHSHRPTA@2026') {
+    logActivity('Admin Login', `Administrator logged in from dashboard (Default).`, undefined);
     return res.json({ success: true, user: { username: 'admin' } });
   }
 
@@ -515,12 +521,18 @@ app.post('/api/elections', async (req, res) => {
 app.delete('/api/elections/:id', async (req, res) => {
   const { id } = req.params;
   if (useSupabaseMode) {
+    const { data: elec } = await supabase.from('hrpta_elections').select('title').eq('id', id).single();
     const { error } = await supabase.from('hrpta_elections').delete().eq('id', id);
-    if (!error) return res.json({ success: true });
+    if (!error) {
+      logActivity('Election Deleted', `Election "${elec?.title || id}" was deleted by administrator.`, id);
+      return res.json({ success: true });
+    }
     console.error('Supabase delete election failed:', error);
     return res.status(500).json({ error: error.message });
   }
 
+  const elec = mockElections.find(e => e.id === id);
+  logActivity('Election Deleted', `Election "${elec?.title || id}" was deleted by administrator (Sandbox).`, id);
   mockElections = mockElections.filter(e => e.id !== id);
   mockSections = mockSections.filter(s => s.election_id !== id);
   res.json({ success: true });
@@ -592,7 +604,10 @@ app.post('/api/elections/:electionId/sections', async (req, res) => {
       adviser_name,
       adviser_passcode
     }]).select();
-    if (!error) return res.json(data[0]);
+    if (!error) {
+      logActivity('Section Created', `Admin created section "${grade_level} - ${section_name}" for this election.`, electionId);
+      return res.json(data[0]);
+    }
     console.error('Supabase create section failed:', error);
   }
 
@@ -606,20 +621,32 @@ app.post('/api/elections/:electionId/sections', async (req, res) => {
     created_at: new Date().toISOString()
   };
   mockSections.push(newSection);
+  logActivity('Section Created', `Admin created section "${grade_level} - ${section_name}" for this election (Sandbox).`, electionId);
   res.json(newSection);
 });
 
 app.delete('/api/sections/:id', async (req, res) => {
   const { id } = req.params;
   if (useSupabaseMode) {
+    const { data: sec } = await supabase.from('hrpta_sections').select('grade_level, section_name, election_id').eq('id', id).single();
     const { error } = await supabase.from('hrpta_sections').delete().eq('id', id);
-    if (!error) return res.json({ success: true });
+    if (!error) {
+      if (sec) {
+        logActivity('Section Deleted', `Admin removed section "${sec.grade_level} - ${sec.section_name}" from the election.`, sec.election_id);
+      }
+      return res.json({ success: true });
+    }
     console.error('Supabase delete section failed:', error);
   }
 
-  mockSections = mockSections.filter(s => s.id !== id);
-  mockCandidates = mockCandidates.filter(c => c.section_id !== id);
-  mockStudents = mockStudents.filter(st => st.section_id !== id);
+  const secIdx = mockSections.findIndex(s => s.id === id);
+  if (secIdx !== -1) {
+    const sec = mockSections[secIdx];
+    logActivity('Section Deleted', `Admin removed section "${sec.grade_level} - ${sec.section_name}" from the election (Sandbox).`, sec.election_id);
+    mockSections = mockSections.filter(s => s.id !== id);
+    mockCandidates = mockCandidates.filter(c => c.section_id !== id);
+    mockStudents = mockStudents.filter(st => st.section_id !== id);
+  }
   res.json({ success: true });
 });
 
@@ -632,6 +659,7 @@ app.post('/api/adviser/login', async (req, res) => {
   if (useSupabaseMode) {
     const { data, error } = await supabase.from('hrpta_sections').select('*, hrpta_elections(title, status)').eq('adviser_passcode', passcode).single();
     if (!error && data) {
+      logActivity('Teacher Login', `Adviser for section "${data.grade_level} - ${data.section_name}" logged in.`, data.election_id);
       return res.json({
         section: data,
         election: data.hrpta_elections
@@ -644,6 +672,7 @@ app.post('/api/adviser/login', async (req, res) => {
   const foundSection = mockSections.find(s => s.adviser_passcode === passcode);
   if (foundSection) {
     const election = mockElections.find(e => e.id === foundSection.election_id);
+    logActivity('Teacher Login', `Adviser for section "${foundSection.grade_level} - ${foundSection.section_name}" logged in (Sandbox).`, foundSection.election_id);
     return res.json({
       section: foundSection,
       election
@@ -668,7 +697,7 @@ app.get('/api/sections/:sectionId/candidates', async (req, res) => {
 
 app.post('/api/sections/:sectionId/candidates', async (req, res) => {
   const { sectionId } = req.params;
-  const { fullname, child_name, position } = req.body;
+  const { fullname, child_name, position, picture_data } = req.body;
 
   if (!fullname || !child_name) {
     return res.status(400).json({ error: 'Fullname and child name are required' });
@@ -677,8 +706,7 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
   // 1. Check for duplicates in the same election across all sections
   if (useSupabaseMode) {
     try {
-      // Get the election_id for this section
-      const { data: sec, error: secErr } = await supabase.from('hrpta_sections').select('election_id').eq('id', sectionId).single();
+      const { data: sec, error: secErr } = await supabase.from('hrpta_sections').select('election_id, grade_level, section_name').eq('id', sectionId).single();
       if (secErr || !sec) return res.status(404).json({ error: 'Section not found' });
       
       const electionId = sec.election_id;
@@ -696,16 +724,33 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
           error: `Candidate "${fullname}" is already registered in ${other.grade_level} - ${other.section_name}. Nominees can only run in one section per election.` 
         });
       }
-    } catch (err) {
-      console.error('Error checking duplicate candidate:', err);
+
+      const { data, error } = await supabase.from('hrpta_candidates').insert([{
+        section_id: sectionId,
+        fullname,
+        child_name,
+        picture_data,
+        income_source: 'None',
+        income_details: '',
+        position: position || 'President'
+      }]).select();
+      if (!error) {
+        logActivity('Candidate Nominated', `Adviser nominated "${fullname}" as candidate for ${position || 'President'} in section ${sec.grade_level} - ${sec.section_name}.`, electionId);
+        return res.json(data[0]);
+      }
+    console.error('Supabase save candidate failed:', JSON.stringify(error, null, 2));
+    return res.status(500).json({ error: `Supabase save candidate failed: ${error.message || JSON.stringify(error)}` });
+    } catch (err: any) {
+      console.error('Candidate nomination error:', err);
+      return res.status(500).json({ error: 'An unexpected error occurred during candidate nomination.' });
     }
-  } else {
-    // Sandbox check
-    const sec = mockSections.find(s => s.id === sectionId);
-    if (!sec) return res.status(404).json({ error: 'Section not found' });
+  }
+
+  // Sandbox Mode Check
+  const sec = mockSections.find(s => s.id === sectionId);
+  if (sec) {
     const electionId = sec.election_id;
     const electionSections = mockSections.filter(s => s.election_id === electionId).map(s => s.id);
-    
     const duplicate = mockCandidates.find(c => 
       electionSections.includes(c.section_id) && 
       c.fullname.toLowerCase() === fullname.trim().toLowerCase()
@@ -717,30 +762,21 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
         error: `Candidate "${fullname}" is already registered in ${otherSec?.grade_level} - ${otherSec?.section_name}. Nominees can only run in one section per election.` 
       });
     }
-  }
 
-  if (useSupabaseMode) {
-    const { data, error } = await supabase.from('hrpta_candidates').insert([{
+    const newCand = {
+      id: 'c_' + Math.random().toString(36).substr(2, 9),
       section_id: sectionId,
       fullname,
       child_name,
-      position: position || 'President'
-    }]).select();
-    if (!error) return res.json(data[0]);
-    console.error('Supabase save candidate failed:', JSON.stringify(error, null, 2));
-    return res.status(500).json({ error: 'Supabase save candidate failed', details: error });
+      picture_data,
+      position,
+      created_at: new Date().toISOString()
+    };
+    mockCandidates.push(newCand);
+    logActivity('Candidate Nominated', `Adviser nominated "${fullname}" as candidate for ${position || 'President'} in section ${sec.grade_level} - ${sec.section_name} (Sandbox).`, electionId);
+    return res.json(newCand);
   }
-
-  const newCand = {
-    id: 'c_' + Math.random().toString(36).substr(2, 9),
-    section_id: sectionId,
-    fullname,
-    child_name,
-    position,
-    created_at: new Date().toISOString()
-  };
-  mockCandidates.push(newCand);
-  res.json(newCand);
+  res.status(404).json({ error: 'Section not found' });
 });
 
 // Clear candidate
@@ -768,7 +804,7 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
   // 1. Check for duplicates in the same election across all sections
   if (useSupabaseMode) {
     try {
-      const { data: sec } = await supabase.from('hrpta_sections').select('election_id').eq('id', sectionId).single();
+      const { data: sec } = await supabase.from('hrpta_sections').select('election_id, grade_level, section_name').eq('id', sectionId).single();
       if (sec) {
         const electionId = sec.election_id;
         // Get all existing candidates for this election
@@ -779,24 +815,27 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
 
         const existingNames = new Set((existing || []).map(e => e.fullname.toLowerCase()));
         
-        // Filter out candidates already in election
-        const filtered = candidates.filter(c => !existingNames.has(c.fullname.toLowerCase()));
-        
-        if (filtered.length === 0 && candidates.length > 0) {
-          return res.status(400).json({ error: 'All candidates in this list are already registered in other sections of this election.' });
-        }
-        
-        // Update the list to only include non-duplicates for the rest of the logic
-        // (Wait, user might want to know which failed, but bulk insert usually fails entirely or succeeds partially)
-        // For simplicity, we'll just insert the non-duplicates or throw error if any duplicate found
-        // The requirement says "Nominated Candidate cannot run in different sections", so we should probably stop if any are invalid.
-        
         const duplicates = candidates.filter(c => existingNames.has(c.fullname.toLowerCase()));
         if (duplicates.length > 0) {
           return res.status(400).json({ 
             error: `Bulk upload contains candidates already registered in this election: ${duplicates.map(d => d.fullname).join(', ')}` 
           });
         }
+
+        const rows = candidates.map(c => ({
+          section_id: sectionId,
+          fullname: c.fullname,
+          child_name: c.child_name,
+          income_source: 'None',
+          income_details: '',
+          position: c.position
+        }));
+        const { data, error } = await supabase.from('hrpta_candidates').insert(rows).select();
+        if (!error) {
+          logActivity('Bulk Nominations', `Adviser uploaded ${candidates.length} candidates for section ${sec.grade_level} - ${sec.section_name}.`, electionId);
+          return res.json(data);
+        }
+        console.error('Supabase bulk save candidates failed:', error);
       }
     } catch (err) {}
   } else {
@@ -813,35 +852,24 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
           error: `Bulk upload contains candidates already registered in this election: ${duplicates.map(d => d.fullname).join(', ')}` 
         });
       }
+      
+      const added = [];
+      for (const c of candidates) {
+        const newCand = {
+          id: 'c_' + Math.random().toString(36).substr(2, 9),
+          section_id: sectionId,
+          fullname: c.fullname,
+          child_name: c.child_name,
+          position: c.position,
+          created_at: new Date().toISOString()
+        };
+        mockCandidates.push(newCand);
+        added.push(newCand);
+      }
+      logActivity('Bulk Nominations', `Adviser uploaded ${candidates.length} candidates for section ${sec.grade_level} - ${sec.section_name} (Sandbox).`, electionId);
+      return res.json(added);
     }
   }
-
-  if (useSupabaseMode) {
-    const rows = candidates.map(c => ({
-      section_id: sectionId,
-      fullname: c.fullname,
-      child_name: c.child_name,
-      position: c.position
-    }));
-    const { data, error } = await supabase.from('hrpta_candidates').insert(rows).select();
-    if (!error) return res.json(data);
-    console.error('Supabase bulk save candidates failed:', error);
-  }
-
-  const added = [];
-  for (const c of candidates) {
-    const newCand = {
-      id: 'c_' + Math.random().toString(36).substr(2, 9),
-      section_id: sectionId,
-      fullname: c.fullname,
-      child_name: c.child_name,
-      position: c.position,
-      created_at: new Date().toISOString()
-    };
-    mockCandidates.push(newCand);
-    added.push(newCand);
-  }
-  res.json(added);
 });
 
 // Student LRN management for section
@@ -866,6 +894,8 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
   }
 
   if (useSupabaseMode) {
+    const { data: sec } = await supabase.from('hrpta_sections').select('election_id, grade_level, section_name').eq('id', sectionId).single();
+    
     const rows = students.map(st => ({
       section_id: sectionId,
       lrn: st.lrn.trim(),
@@ -874,12 +904,18 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
     }));
 
     const { data, error } = await supabase.from('hrpta_students').upsert(rows).select();
-    if (!error) return res.json(data);
+    if (!error) {
+      if (sec) {
+        logActivity('Student List Uploaded', `Adviser uploaded/updated ${students.length} students for section ${sec.grade_level} - ${sec.section_name}.`, sec.election_id);
+      }
+      return res.json(data);
+    }
     console.error('Supabase bulk save students failed:', error);
   }
 
   // Sandbox mode: Append new students
   const added = [];
+  const sec = mockSections.find(s => s.id === sectionId);
   for (const st of students) {
     const newStudent = {
       id: 'st_' + Math.random().toString(36).substr(2, 9),
@@ -893,6 +929,9 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
     mockStudents.push(newStudent);
     added.push(newStudent);
   }
+  if (sec) {
+    logActivity('Student List Uploaded', `Adviser uploaded/updated ${students.length} students for section ${sec.grade_level} - ${sec.section_name} (Sandbox).`, sec.election_id);
+  }
   res.json(added);
 });
 
@@ -900,12 +939,24 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
 app.delete('/api/students/:id', async (req, res) => {
   const { id } = req.params;
   if (useSupabaseMode) {
+    const { data: st } = await supabase.from('hrpta_students').select('student_name, hrpta_sections(election_id)').eq('id', id).single();
     const { error } = await supabase.from('hrpta_students').delete().eq('id', id);
-    if (!error) return res.json({ success: true });
+    if (!error) {
+      if (st) {
+        logActivity('Student Removed', `Adviser removed student record for "${st.student_name}".`, st.hrpta_sections?.election_id);
+      }
+      return res.json({ success: true });
+    }
     console.error('Supabase delete student failed:', error);
   }
 
-  mockStudents = mockStudents.filter(st => st.id !== id);
+  const stIdx = mockStudents.findIndex(st => st.id === id);
+  if (stIdx !== -1) {
+    const st = mockStudents[stIdx];
+    const sec = mockSections.find(s => s.id === st.section_id);
+    logActivity('Student Removed', `Adviser removed student record for "${st.student_name}" (Sandbox).`, sec?.election_id);
+    mockStudents = mockStudents.filter(st => st.id !== id);
+  }
   res.json({ success: true });
 });
 
@@ -919,8 +970,11 @@ app.patch('/api/students/:id', async (req, res) => {
       .from('hrpta_students')
       .update({ lrn, student_name })
       .eq('id', id)
-      .select();
-    if (!error) return res.json(data[0]);
+      .select('*, hrpta_sections(election_id)');
+    if (!error && data && data.length > 0) {
+      logActivity('Student Updated', `Adviser updated student record for "${data[0].student_name}" (LRN: ${data[0].lrn}).`, data[0].hrpta_sections?.election_id);
+      return res.json(data[0]);
+    }
     console.error('Supabase update student failed:', error);
   }
 
@@ -928,6 +982,8 @@ app.patch('/api/students/:id', async (req, res) => {
   if (idx !== -1) {
     mockStudents[idx].lrn = lrn || mockStudents[idx].lrn;
     mockStudents[idx].student_name = student_name || mockStudents[idx].student_name;
+    const sec = mockSections.find(s => s.id === mockStudents[idx].section_id);
+    logActivity('Student Updated', `Adviser updated student record for "${mockStudents[idx].student_name}" (Sandbox).`, sec?.election_id);
     return res.json(mockStudents[idx]);
   }
   res.status(404).json({ error: 'Student not found' });
@@ -963,6 +1019,7 @@ app.post('/api/voter/authenticate', async (req, res) => {
           // Fall through to sandbox check if orphaned in Supabase
         } else {
           if (targetStudent.has_voted) {
+            logActivity('Voter Login Blocked', `Voter for student "${targetStudent.student_name}" (LRN: ${cleanLrn}) attempted login but has already voted.`, targetSection.election_id);
             return res.status(403).json({ error: 'Our records show that the household vote for this LRN has already been cast.' });
           }
           
@@ -983,8 +1040,10 @@ app.post('/api/voter/authenticate', async (req, res) => {
             }
           } else if (election) {
             if (election.status === 'closed') {
+              logActivity('Voter Login Blocked', `Voter for student "${targetStudent.student_name}" (LRN: ${cleanLrn}) attempted login but election is closed.`, targetSection.election_id);
               return res.status(403).json({ error: 'This election has already closed.' });
             }
+            logActivity('Voter Login', `Voter for student "${targetStudent.student_name}" (LRN: ${cleanLrn}) accessed the ballot.`, targetSection.election_id);
             return res.json({
               student: targetStudent,
               section: targetSection,
@@ -1002,20 +1061,23 @@ app.post('/api/voter/authenticate', async (req, res) => {
   // Sandbox Fallback
   const foundStudent = mockStudents.find(st => st.lrn === cleanLrn);
   if (foundStudent) {
-    if (foundStudent.has_voted) {
-      return res.status(403).json({ error: 'Our records show that the household vote for this LRN has already been cast.' });
-    }
-
     const section = mockSections.find(s => s.id === foundStudent.section_id);
     if (!section) return res.status(404).json({ error: 'Student section not found' });
+
+    if (foundStudent.has_voted) {
+      logActivity('Voter Login Blocked', `Voter for student "${foundStudent.student_name}" (LRN: ${cleanLrn}) attempted login but has already voted (Sandbox).`, section.election_id);
+      return res.status(403).json({ error: 'Our records show that the household vote for this LRN has already been cast.' });
+    }
 
     const election = mockElections.find(e => e.id === section.election_id);
     if (!election) return res.status(404).json({ error: 'Election not found' });
 
     if (election.status === 'closed') {
+      logActivity('Voter Login Blocked', `Voter for student "${foundStudent.student_name}" (LRN: ${cleanLrn}) attempted login but election is closed (Sandbox).`, section.election_id);
       return res.status(403).json({ error: 'This election has already closed.' });
     }
 
+    logActivity('Voter Login', `Voter for student "${foundStudent.student_name}" (LRN: ${cleanLrn}) accessed the ballot (Sandbox).`, section.election_id);
     return res.json({
       student: foundStudent,
       section,

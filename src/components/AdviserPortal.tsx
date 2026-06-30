@@ -681,7 +681,7 @@ export default function AdviserPortal() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Candidate Picture</label>
+                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Candidate Picture (Optional)</label>
                       <div className="flex items-center gap-4">
                         <label className="flex-1 cursor-pointer flex items-center justify-center gap-2 border-2 border-dashed border-[#e2e8f0] hover:border-[#1e3a8a] rounded-xl p-3 text-sm text-[#475569] hover:text-[#1e3a8a] transition-all bg-[#f8fafc]">
                           <ImageIcon className="w-5 h-5" />
