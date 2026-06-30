@@ -54,16 +54,16 @@ let mockSections: any[] = [
 
 let mockCandidates: any[] = [
   // Section Amber
-  { id: 'c1', section_id: 's1', fullname: 'Antonio Santos Sr.', child_name: 'Antonio Santos Jr.', income_source: 'Employment', income_details: 'Meralco - Senior Engineer', position: 'President' },
-  { id: 'c2', section_id: 's1', fullname: 'Maria Leonor Cruz', child_name: 'Angelica Cruz', income_source: 'Business', income_details: 'Cruz Mini-Mart - Owner', position: 'President' },
-  { id: 'c3', section_id: 's1', fullname: 'Joseph Reyes', child_name: 'Mark Reyes', income_source: 'Employment', income_details: 'PLDT - Technician', position: 'Vice President' },
-  { id: 'c4', section_id: 's1', fullname: 'Grace Dela Cruz', child_name: 'John Dela Cruz', income_source: 'Other', income_details: 'Freelance Writer', position: 'Secretary' },
-  { id: 'c5', section_id: 's1', fullname: 'Fernando Jose', child_name: 'Therese Jose', income_source: 'Business', income_details: 'Jose Bakery', position: 'Treasurer' },
-  { id: 'c6', section_id: 's1', fullname: 'Christina Almeda', child_name: 'Christian Almeda', income_source: 'None', income_details: 'Full-time Parent', position: 'Auditor' },
+  { id: 'c1', section_id: 's1', fullname: 'Antonio Santos Sr.', child_name: 'Antonio Santos Jr.', position: 'President' },
+  { id: 'c2', section_id: 's1', fullname: 'Maria Leonor Cruz', child_name: 'Angelica Cruz', position: 'President' },
+  { id: 'c3', section_id: 's1', fullname: 'Joseph Reyes', child_name: 'Mark Reyes', position: 'Vice President' },
+  { id: 'c4', section_id: 's1', fullname: 'Grace Dela Cruz', child_name: 'John Dela Cruz', position: 'Secretary' },
+  { id: 'c5', section_id: 's1', fullname: 'Fernando Jose', child_name: 'Therese Jose', position: 'Treasurer' },
+  { id: 'c6', section_id: 's1', fullname: 'Christina Almeda', child_name: 'Christian Almeda', position: 'Auditor' },
   
   // Section Birch
-  { id: 'c201', section_id: 's2', fullname: 'David Vance', child_name: 'James Vance', income_source: 'Employment', income_details: 'BPI - Bank Teller', position: 'President' },
-  { id: 'c202', section_id: 's2', fullname: 'Jane Carter', child_name: 'Sarah Carter', income_source: 'Business', income_details: 'Carter Tailoring', position: 'President' }
+  { id: 'c201', section_id: 's2', fullname: 'David Vance', child_name: 'James Vance', position: 'President' },
+  { id: 'c202', section_id: 's2', fullname: 'Jane Carter', child_name: 'Sarah Carter', position: 'President' }
 ];
 
 let mockStudents: any[] = [
@@ -83,6 +83,8 @@ let mockVotes: any[] = [];
 let mockAdminAccounts: any[] = [
   { id: 'admin1', username: 'admin', password: 'RMCHSHRPTA@2026', created_at: new Date().toISOString() }
 ];
+
+let mockActivityLogs: any[] = [];
 
 // Helper to determine if we should use Supabase or mock
 let useSupabaseMode = false;
@@ -109,6 +111,34 @@ async function checkSupabaseStatus() {
   } catch (err: any) {
     useSupabaseMode = false;
     return { configured: true, connected: false, error: err.message || String(err) };
+  }
+}
+
+// Database status check and logging utility
+async function logActivity(activityType: string, details: string, electionId?: string) {
+  const logEntry = {
+    activity_type: activityType,
+    details,
+    election_id: electionId,
+    created_at: new Date().toISOString()
+  };
+
+  if (useSupabaseMode && supabase) {
+    try {
+      await supabase.from('hrpta_activity_logs').insert([logEntry]);
+    } catch (err) {
+      console.error('Failed to log activity to Supabase:', err);
+    }
+  }
+
+  mockActivityLogs.unshift({
+    id: 'log_' + Math.random().toString(36).substr(2, 9),
+    ...logEntry
+  });
+  
+  // Keep only last 100 logs in memory
+  if (mockActivityLogs.length > 100) {
+    mockActivityLogs = mockActivityLogs.slice(0, 100);
   }
 }
 
@@ -147,8 +177,6 @@ CREATE TABLE IF NOT EXISTS hrpta_candidates (
   section_id UUID REFERENCES hrpta_sections(id) ON DELETE CASCADE,
   fullname TEXT NOT NULL,
   child_name TEXT NOT NULL,
-  income_source TEXT NOT NULL,
-  income_details TEXT,
   position TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -215,11 +243,24 @@ CREATE TABLE IF NOT EXISTS hrpta_admin (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 7. Activity Logs Table
+CREATE TABLE IF NOT EXISTS hrpta_activity_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  election_id UUID REFERENCES hrpta_elections(id) ON DELETE CASCADE,
+  activity_type TEXT NOT NULL,
+  details TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
 ALTER TABLE hrpta_admin ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow public select" ON hrpta_admin FOR SELECT USING (true);
 CREATE POLICY "Allow public insert" ON hrpta_admin FOR INSERT WITH CHECK (true);
 CREATE POLICY "Allow public update" ON hrpta_admin FOR UPDATE USING (true);
 CREATE POLICY "Allow public delete" ON hrpta_admin FOR DELETE USING (true);
+
+ALTER TABLE hrpta_activity_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public select" ON hrpta_activity_logs FOR SELECT USING (true);
+CREATE POLICY "Allow public insert" ON hrpta_activity_logs FOR INSERT WITH CHECK (true);
 
 -- Insert default admin account
 INSERT INTO hrpta_admin (username, password) VALUES ('admin', 'RMCHSHRPTA@2026') ON CONFLICT (username) DO NOTHING;
@@ -452,7 +493,10 @@ app.post('/api/elections', async (req, res) => {
 
   if (useSupabaseMode) {
     const { data, error } = await supabase.from('hrpta_elections').insert([{ title, status: 'active' }]).select();
-    if (!error) return res.json(data[0]);
+    if (!error) {
+      logActivity('Election Created', `Election "${title}" was created by administrator.`, data[0].id);
+      return res.json(data[0]);
+    }
     console.error('Supabase create election failed:', error);
     return res.status(500).json({ error: error.message });
   }
@@ -464,6 +508,7 @@ app.post('/api/elections', async (req, res) => {
     created_at: new Date().toISOString()
   };
   mockElections.unshift(newElection);
+  logActivity('Election Created', `Election "${title}" was created by administrator (Sandbox Mode).`, newElection.id);
   res.json(newElection);
 });
 
@@ -495,6 +540,7 @@ app.patch('/api/elections/:id/status', async (req, res) => {
     }
     
     if (data && data.length > 0) {
+      logActivity('Election Status Updated', `Election status changed to "${status}".`, id);
       return res.json(data[0]);
     }
 
@@ -622,10 +668,10 @@ app.get('/api/sections/:sectionId/candidates', async (req, res) => {
 
 app.post('/api/sections/:sectionId/candidates', async (req, res) => {
   const { sectionId } = req.params;
-  const { fullname, child_name, income_source, income_details, position } = req.body;
+  const { fullname, child_name, position } = req.body;
 
-  if (!fullname || !child_name || !income_source) {
-    return res.status(400).json({ error: 'Fullname, child name, and income source are required' });
+  if (!fullname || !child_name) {
+    return res.status(400).json({ error: 'Fullname and child name are required' });
   }
 
   // 1. Check for duplicates in the same election across all sections
@@ -678,8 +724,6 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
       section_id: sectionId,
       fullname,
       child_name,
-      income_source,
-      income_details: income_details || '',
       position: position || 'President'
     }]).select();
     if (!error) return res.json(data[0]);
@@ -692,8 +736,6 @@ app.post('/api/sections/:sectionId/candidates', async (req, res) => {
     section_id: sectionId,
     fullname,
     child_name,
-    income_source,
-    income_details: income_details || '',
     position,
     created_at: new Date().toISOString()
   };
@@ -779,8 +821,6 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
       section_id: sectionId,
       fullname: c.fullname,
       child_name: c.child_name,
-      income_source: c.income_source,
-      income_details: c.income_details || '',
       position: c.position
     }));
     const { data, error } = await supabase.from('hrpta_candidates').insert(rows).select();
@@ -795,8 +835,6 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
       section_id: sectionId,
       fullname: c.fullname,
       child_name: c.child_name,
-      income_source: c.income_source,
-      income_details: c.income_details || '',
       position: c.position,
       created_at: new Date().toISOString()
     };
@@ -1036,6 +1074,8 @@ app.post('/api/voter/vote', async (req, res) => {
       
       if (updateErr) throw updateErr;
 
+      logActivity('Vote Cast', `Vote recorded for student "${student.student_name}" (LRN: ${student.lrn}).`, student.election_id);
+
       return res.json({ success: true });
     } catch (err: any) {
       console.error('Supabase casting vote failed:', err);
@@ -1072,7 +1112,31 @@ app.post('/api/voter/vote', async (req, res) => {
   mockStudents[studIdx].has_voted = true;
   mockStudents[studIdx].voted_at = new Date().toISOString();
 
+  const section = mockSections.find(s => s.id === student.section_id);
+  logActivity('Vote Cast', `Vote recorded for student "${student.student_name}" (LRN: ${student.lrn}) in Sandbox Mode.`, section?.election_id);
+
   res.json({ success: true });
+});
+
+// 5. ACTIVITY LOGS
+app.get('/api/activity-logs', async (req, res) => {
+  const { electionId } = req.query;
+
+  if (useSupabaseMode && supabase) {
+    let query = supabase.from('hrpta_activity_logs').select('*').order('created_at', { ascending: false }).limit(50);
+    if (electionId) {
+      query = query.eq('election_id', electionId);
+    }
+    const { data, error } = await query;
+    if (!error) return res.json(data);
+    console.error('Supabase fetch logs failed:', error);
+  }
+
+  let logs = mockActivityLogs;
+  if (electionId) {
+    logs = logs.filter(l => l.election_id === electionId);
+  }
+  res.json(logs);
 });
 
 // Real-time Results & Stats for a specific section

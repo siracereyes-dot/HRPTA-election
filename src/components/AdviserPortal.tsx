@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
-  Trash2, Plus, Info, RefreshCw, Briefcase, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon,
+  Trash2, Plus, Info, RefreshCw, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon,
   Pencil, Save, X, Download
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -38,8 +38,6 @@ export default function AdviserPortal() {
   // Single Candidate Form
   const [candName, setCandName] = useState('');
   const [candChild, setCandChild] = useState('');
-  const [candIncomeSource, setCandIncomeSource] = useState<'Business' | 'Employment' | 'Other' | 'None'>('Employment');
-  const [candIncomeDetails, setCandIncomeDetails] = useState('');
   const [candidatePicture, setCandidatePicture] = useState<string | null>(null);
   
   // Bulk uploads raw text
@@ -251,8 +249,6 @@ export default function AdviserPortal() {
         body: JSON.stringify({
           fullname: candName,
           child_name: candChild,
-          income_source: candIncomeSource,
-          income_details: candIncomeDetails,
           position: null,
           picture_data: candidatePicture
         })
@@ -261,7 +257,6 @@ export default function AdviserPortal() {
       if (res.ok) {
         setCandName('');
         setCandChild('');
-        setCandIncomeDetails('');
         setCandidatePicture(null);
         setCandidateError('');
         fetchSectionData();
@@ -422,21 +417,17 @@ export default function AdviserPortal() {
       const parts = line.split(',');
       const fullname = parts[0]?.trim();
       const child_name = parts[1]?.trim();
-      const income_source = (parts[2]?.trim() || 'None') as 'Business' | 'Employment' | 'Other' | 'None';
-      const income_details = parts[3]?.trim() || '';
 
       if (fullname && child_name) {
         parsedCandidates.push({
           fullname,
-          child_name,
-          income_source,
-          income_details
+          child_name
         });
       }
     });
 
     if (parsedCandidates.length === 0) {
-      setBulkCandidateError('Could not parse any candidates. Verify the format is correct (FullName, ChildName, IncomeSource, IncomeDetails).');
+      setBulkCandidateError('Could not parse any candidates. Verify the format is correct (FullName, ChildName).');
       return;
     }
 
@@ -703,38 +694,6 @@ export default function AdviserPortal() {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">Source of Income</label>
-                      <select
-                        value={candIncomeSource}
-                        onChange={(e: any) => setCandIncomeSource(e.target.value)}
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
-                      >
-                        <option value="Employment">Working (Employment)</option>
-                        <option value="Business">Business (Owner)</option>
-                        <option value="Other">Other</option>
-                        <option value="None">None (N/A)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-1 font-mono">
-                        {candIncomeSource === 'Business' 
-                          ? 'Name of the Business' 
-                          : candIncomeSource === 'Employment'
-                            ? 'Company Name & Designation'
-                            : 'Income Details/Remarks'}
-                      </label>
-                      <input
-                        type="text"
-                        value={candIncomeDetails}
-                        onChange={(e) => setCandIncomeDetails(e.target.value)}
-                        placeholder={candIncomeSource === 'Business' ? 'e.g., Dela Cruz Bakery' : candIncomeSource === 'Employment' ? 'e.g., PLDT - Network Tech' : 'e.g., Freelance tutor'}
-                        className="w-full text-sm border border-[#e2e8f0] bg-[#f8fafc] rounded-xl px-3 py-2.5 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
-                        disabled={candIncomeSource === 'None'}
-                      />
-                    </div>
-
                   {candidateError && (
                     <div className="p-3 bg-amber-50 text-amber-800 text-[11px] rounded-lg font-semibold border border-amber-100 flex items-start gap-2 mb-2 animate-in fade-in slide-in-from-top-1">
                       <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -761,16 +720,16 @@ export default function AdviserPortal() {
                   <form onSubmit={handleBulkCandidateUpload} className="space-y-3">
                     <div className="bg-[#f1f5f9] rounded-xl p-3 border border-[#e2e8f0] text-[10px] text-[#475569] leading-normal font-mono mb-2">
                       <span className="font-bold text-[#0f172a] block mb-0.5">Format per line:</span>
-                      FullName, ChildName, IncomeSource, IncomeDetails
+                      FullName, ChildName
                       <span className="font-bold text-[#0f172a] block mt-1.5 mb-0.5">Example:</span>
-                      Juana Santos, Pedro Santos, Business, Santos Sari-sari Store<br/>
-                      Rey Reyes, Amy Reyes, Employment, PLDT - Engineer
+                      Juana Santos, Pedro Santos<br/>
+                      Rey Reyes, Amy Reyes
                     </div>
                     
                     <textarea
                       value={bulkCandInput}
                       onChange={(e) => setBulkCandInput(e.target.value)}
-                      placeholder="Juana Santos, Pedro Santos, Business, Santos Sari-sari Store..."
+                      placeholder="Juana Santos, Pedro Santos..."
                       rows={5}
                       className="w-full text-xs font-mono border border-[#e2e8f0] bg-[#f8fafc] rounded-xl p-3 focus:outline-hidden focus:ring-2 focus:ring-[#1e3a8a] text-[#0f172a]"
                     />
@@ -827,13 +786,6 @@ export default function AdviserPortal() {
                           </div>
                           <div className="text-xs text-[#475569] space-y-0.5">
                             <p>Child: <span className="font-bold text-[#0f172a]">{c.child_name}</span></p>
-                            <p className="flex items-center gap-1">
-                              <Briefcase className="w-3.5 h-3.5 text-[#475569]/80 inline" />
-                              <span>
-                                Income: {c.income_source} 
-                                {c.income_details && ` (${c.income_details})`}
-                              </span>
-                            </p>
                           </div>
                         </div>
                         <button

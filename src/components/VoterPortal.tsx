@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
 import { 
-  Key, ShieldCheck, UserCheck, Briefcase, FileCheck2, 
+  Key, ShieldCheck, UserCheck, FileCheck2, 
   ChevronRight, ArrowRight, CheckCircle2, Lock, Info, Landmark 
 } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -300,7 +300,7 @@ export default function VoterPortal() {
           <div className="bg-[#f1f5f9] border border-[#e2e8f0] rounded-2xl p-4 flex gap-3 text-xs leading-normal text-[#0f172a]">
             <Lock className="w-4 h-4 text-[#475569] shrink-0 mt-0.5" />
             <p>
-              Your Homeroom PTA ballot is fully encrypted and tied to your child's LRN. You can only vote once per student. Candidate background information, such as employment or business background, is provided below to inform your choice.
+              Your Homeroom PTA ballot is fully encrypted and tied to your child's LRN. You can only vote once per student. Choose the best parent volunteers to lead your section for the current school year.
             </p>
           </div>
 
@@ -345,14 +345,12 @@ export default function VoterPortal() {
                             </div>
                           </div>
 
-                          <div className="pt-2.5 pb-3 border-t border-[#f1f5f9] text-xs text-[#475569] flex items-start gap-2">
-                            <Briefcase className="w-4 h-4 text-[#475569] shrink-0 mt-0.5" />
+                          <div className="pt-2.5 pb-1 border-t border-[#f1f5f9] text-xs text-[#475569] flex items-start gap-2">
+                            <UserCheck className="w-4 h-4 text-[#475569] shrink-0 mt-0.5" />
                             <div>
-                              <span className="font-bold text-[#0f172a] block">Income Profile:</span>
+                              <span className="font-bold text-[#0f172a] block">Nominee Profile:</span>
                               <span className="text-[#475569]">
-                                {c.income_source === 'None' 
-                                  ? 'No corporate/business details declared' 
-                                  : `${c.income_source} (${c.income_details || 'Private'})`}
+                                Verified Parent Volunteer
                               </span>
                             </div>
                           </div>

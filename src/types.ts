@@ -35,8 +35,6 @@ export interface Candidate {
   section_id: string;
   fullname: string;
   child_name: string;
-  income_source: 'Business' | 'Employment' | 'Other' | 'None';
-  income_details: string; // business name or company & designation or explanation
   position?: Position;
   picture_data?: string; // base64 compressed image
   created_at?: string;
@@ -69,4 +67,12 @@ export interface SectionStats {
   total_students: number;
   voted_students: number;
   participation_rate: number;
+}
+
+export interface ActivityLog {
+  id: string;
+  election_id?: string;
+  activity_type: string;
+  details: string;
+  created_at: string;
 }

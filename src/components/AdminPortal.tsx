@@ -4,10 +4,11 @@ import * as XLSX from 'xlsx';
 import { 
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
-  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Lock, Download, FileSpreadsheet
+  Printer, Award, FileText, ChevronRight, LogIn, LogOut, Lock, Download, FileSpreadsheet,
+  History, Activity
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { Election, Section, SectionStats, Candidate } from '../types';
+import { Election, Section, SectionStats, Candidate, ActivityLog } from '../types';
 import { ResultsChart } from './ResultsChart';
 
 interface DbStatus {
@@ -58,7 +59,9 @@ export default function AdminPortal() {
 
   // Results State
   const gradeLevels = Array.from(new Set(sections.map(s => s.grade_level))).sort((a, b) => (a as string).localeCompare(b as string, undefined, { numeric: true }));
-  const [adminSubTab, setAdminSubTab] = useState<'manage' | 'results'>('manage');
+  const [adminSubTab, setAdminSubTab] = useState<'manage' | 'results' | 'logs'>('manage');
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
   const [resultsSubView, setResultsSubView] = useState<'sections' | 'consolidated'>('sections');
   const [selectedResultsSection, setSelectedResultsSection] = useState<Section | null>(null);
   const [resultsBySection, setResultsBySection] = useState<{
@@ -560,7 +563,24 @@ export default function AdminPortal() {
 
   useEffect(() => {
     fetchElectionData();
-  }, [selectedElection]);
+    if (adminSubTab === 'logs') {
+      fetchLogs();
+    }
+  }, [selectedElection, adminSubTab]);
+
+  const fetchLogs = async () => {
+    if (!selectedElection) return;
+    setLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/activity-logs?electionId=${selectedElection.id}`);
+      const data = await res.json();
+      setActivityLogs(data);
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
 
   // Real-time updates polling
   useEffect(() => {
@@ -1104,6 +1124,18 @@ export default function AdminPortal() {
                     <BarChart3 className="w-3.5 h-3.5" />
                     View & Print Election Results
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminSubTab('logs')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                      adminSubTab === 'logs'
+                        ? 'bg-white text-[#1e3a8a] shadow-xs'
+                        : 'text-[#475569] hover:text-[#0f172a]'
+                    }`}
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    Activity Logs
+                  </button>
                 </div>
 
                 {adminSubTab === 'manage' ? (
@@ -1347,6 +1379,99 @@ export default function AdminPortal() {
                       )}
                     </div>
                   </>
+                ) : adminSubTab === 'logs' ? (
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-[24px] p-6 shadow-sm border border-[#e2e8f0]">
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-serif font-bold text-[#1e3a8a] flex items-center gap-2">
+                          <History className="text-[#1e3a8a] w-5 h-5" />
+                          System Activity Log
+                        </h3>
+                        <button 
+                          onClick={fetchLogs}
+                          disabled={loadingLogs}
+                          className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a8a] hover:bg-[#f1f5f9] px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin' : ''}`} />
+                          Refresh Logs
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        {loadingLogs ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-[#475569]">
+                            <RefreshCw className="w-8 h-8 animate-spin mb-2 opacity-20" />
+                            <p className="text-xs font-bold uppercase tracking-widest">Loading activities...</p>
+                          </div>
+                        ) : activityLogs.length === 0 ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-[#475569] border-2 border-dashed border-[#e2e8f0] rounded-[20px]">
+                            <Activity className="w-8 h-8 mb-2 opacity-20" />
+                            <p className="text-xs font-bold uppercase tracking-widest">No activities recorded yet</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-hidden rounded-xl border border-[#e2e8f0]">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                                    <th className="px-4 py-3 text-[10px] font-bold text-[#475569] uppercase tracking-widest font-mono">Timestamp</th>
+                                    <th className="px-4 py-3 text-[10px] font-bold text-[#475569] uppercase tracking-widest font-mono">Event Type</th>
+                                    <th className="px-4 py-3 text-[10px] font-bold text-[#475569] uppercase tracking-widest font-mono">Details</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-[#e2e8f0]">
+                                  {activityLogs.map((log) => (
+                                    <motion.tr 
+                                      key={log.id}
+                                      initial={{ opacity: 0 }}
+                                      animate={{ opacity: 1 }}
+                                      className="hover:bg-[#f8fafc] transition-colors"
+                                    >
+                                      <td className="px-4 py-3 whitespace-nowrap">
+                                        <div className="flex flex-col">
+                                          <span className="text-[11px] font-bold text-[#1e3a8a]">
+                                            {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          </span>
+                                          <span className="text-[9px] text-[#475569] font-medium">
+                                            {new Date(log.created_at).toLocaleDateString()}
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter ${
+                                          log.activity_type.includes('Election') ? 'bg-blue-50 text-blue-700' :
+                                          log.activity_type.includes('Vote') ? 'bg-emerald-50 text-emerald-700' :
+                                          'bg-slate-50 text-slate-700'
+                                        }`}>
+                                          {log.activity_type}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3">
+                                        <p className="text-xs text-[#0f172a] leading-relaxed max-w-md">
+                                          {log.details}
+                                        </p>
+                                      </td>
+                                    </motion.tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#1e3a8a] rounded-[24px] p-8 text-white shadow-xl relative overflow-hidden">
+                      <div className="relative z-10">
+                        <h4 className="text-lg font-serif font-bold mb-2">Audit Transparency</h4>
+                        <p className="text-sm text-blue-100/80 leading-relaxed max-w-xl">
+                          The Activity Log provides a real-time record of administrative actions and voting participation. 
+                          This ensures the integrity of the HRPTA election process by tracking critical events as they occur.
+                        </p>
+                      </div>
+                      <FileText className="absolute -right-8 -bottom-8 w-48 h-48 text-white/5 rotate-12" />
+                    </div>
+                  </div>
                 ) : (
                   /* Elections Results View */
                   <div className="space-y-6">
