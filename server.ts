@@ -495,13 +495,17 @@ app.post('/api/db-status/toggle', (req, res) => {
 
 // 1. ELECTIONS
 app.get('/api/elections', async (req, res) => {
-  if (useSupabaseMode) {
-    const { data, error } = await supabase.from('hrpta_elections').select('*').order('created_at', { ascending: false });
-    if (!error) return res.json(data);
-    console.error('Supabase fetch elections failed:', error);
-    return res.status(500).json({ error: error.message });
+  try {
+    if (useSupabaseMode && supabase) {
+      const { data, error } = await supabase.from('hrpta_elections').select('*').order('created_at', { ascending: false });
+      if (!error) return res.json(data);
+      console.error('Supabase fetch elections failed:', error);
+    }
+    res.json(mockElections);
+  } catch (err) {
+    console.error('API elections fetch crash:', err);
+    res.json(mockElections);
   }
-  res.json(mockElections);
 });
 
 app.post('/api/elections', async (req, res) => {
@@ -554,28 +558,22 @@ app.patch('/api/elections/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body; // 'active' | 'closed'
 
-  if (useSupabaseMode) {
-    const { data, error } = await supabase.from('hrpta_elections').update({ status }).eq('id', id).select();
-    
-    if (error) {
-      console.error('Supabase update election status failed:', error);
-      return res.status(500).json({ error: error.message });
+  try {
+    if (useSupabaseMode && supabase && id && id !== 'undefined') {
+      const { data, error } = await supabase.from('hrpta_elections').update({ status }).eq('id', id).select();
+      
+      if (error) {
+        console.error('Supabase update election status failed:', error);
+        return res.status(500).json({ error: error.message });
+      }
+      
+      if (data && data.length > 0) {
+        logActivity('Election Status Updated', `Election status changed to "${status}".`, id);
+        return res.json(data[0]);
+      }
     }
-    
-    if (data && data.length > 0) {
-      logActivity('Election Status Updated', `Election status changed to "${status}".`, id);
-      return res.json(data[0]);
-    }
-
-    // Diagnostic: Check if row exists but update failed (likely RLS)
-    const { data: checkData, error: checkError } = await supabase.from('hrpta_elections').select('id').eq('id', id);
-    if (!checkError && checkData && checkData.length === 0) {
-      return res.status(404).json({ error: `Election with ID ${id} not found in database. It may have been deleted.` });
-    } else if (!checkError && checkData && checkData.length > 0) {
-      return res.status(403).json({ error: 'Permission Denied: The election exists but your Supabase RLS policies are preventing updates. Ensure you have run the latest "Allow public update" SQL policy commands.' });
-    }
-
-    return res.status(404).json({ error: 'Election not found in database.' });
+  } catch (err) {
+    console.error('Supabase status update crash:', err);
   }
 
   const idx = mockElections.findIndex(e => e.id === id);
@@ -589,10 +587,14 @@ app.patch('/api/elections/:id/status', async (req, res) => {
 // 2. SECTIONS
 app.get('/api/elections/:electionId/sections', async (req, res) => {
   const { electionId } = req.params;
-  if (useSupabaseMode) {
-    const { data, error } = await supabase.from('hrpta_sections').select('*').eq('election_id', electionId).order('grade_level', { ascending: true });
-    if (!error) return res.json(data);
-    console.error('Supabase fetch sections failed:', error);
+  try {
+    if (useSupabaseMode && supabase) {
+      const { data, error } = await supabase.from('hrpta_sections').select('*').eq('election_id', electionId).order('grade_level', { ascending: true });
+      if (!error) return res.json(data);
+      console.error('Supabase fetch sections failed:', error);
+    }
+  } catch (err) {
+    console.error('API sections fetch crash:', err);
   }
 
   const filtered = mockSections.filter(s => s.election_id === electionId);
@@ -1253,18 +1255,22 @@ app.post('/api/voter/vote', async (req, res) => {
 app.get('/api/activity-logs', async (req, res) => {
   const { electionId } = req.query;
 
-  if (useSupabaseMode && supabase) {
-    let query = supabase.from('hrpta_activity_logs').select('*').order('created_at', { ascending: false }).limit(50);
-    if (electionId) {
-      query = query.eq('election_id', electionId);
+  try {
+    if (useSupabaseMode && supabase) {
+      let query = supabase.from('hrpta_activity_logs').select('*').order('created_at', { ascending: false }).limit(50);
+      if (electionId && electionId !== 'undefined') {
+        query = query.eq('election_id', electionId);
+      }
+      const { data, error } = await query;
+      if (!error) return res.json(data || []);
+      console.error('Supabase fetch logs failed:', error);
     }
-    const { data, error } = await query;
-    if (!error) return res.json(data);
-    console.error('Supabase fetch logs failed:', error);
+  } catch (err) {
+    console.error('Supabase activity logs fetch crash:', err);
   }
 
   let logs = mockActivityLogs;
-  if (electionId) {
+  if (electionId && electionId !== 'undefined') {
     logs = logs.filter(l => l.election_id === electionId);
   }
   res.json(logs);
@@ -1274,8 +1280,8 @@ app.get('/api/activity-logs', async (req, res) => {
 app.get('/api/sections/:sectionId/results', async (req, res) => {
   const { sectionId } = req.params;
 
-  if (useSupabaseMode) {
-    try {
+  try {
+    if (useSupabaseMode && supabase && sectionId && sectionId !== 'undefined') {
       // Fetch votes for the section
       const { data: votes, error: votesErr } = await supabase
         .from('hrpta_votes')
@@ -1297,64 +1303,71 @@ app.get('/api/sections/:sectionId/results', async (req, res) => {
         throw new Error('Supabase retrieval error');
       }
 
-      // Group votes by candidate and positions
-      const results: { [pos: string]: { [candId: string]: number } } = {};
-      
-      // Initialize with 0 for all candidates under all positions
-      POSITIONS.forEach(pos => {
-        results[pos] = {};
-        candidates.forEach((c: any) => {
-          results[pos][c.id] = 0;
+      if (votes && candidates) {
+        // Group votes by candidate and positions
+        const results: { [pos: string]: { [candId: string]: number } } = {};
+        
+        // Initialize with 0 for all candidates under all positions
+        POSITIONS.forEach(pos => {
+          results[pos] = {};
+          candidates.forEach((c: any) => {
+            results[pos][c.id] = 0;
+          });
         });
-      });
 
-      // Count votes
-      votes.forEach((v: any) => {
-        if (results[v.position] && results[v.position][v.candidate_id] !== undefined) {
-          results[v.position][v.candidate_id]++;
-        }
-      });
+        // Count votes
+        votes.forEach((v: any) => {
+          if (results[v.position] && results[v.position][v.candidate_id] !== undefined) {
+            results[v.position][v.candidate_id]++;
+          }
+        });
 
-      return res.json({
-        positions: results,
-        totalVotesCast: votes.length / POSITIONS.length // approximate
-      });
-    } catch (err) {
-      console.error('Supabase fetch results failed:', err);
+        return res.json({
+          positions: results,
+          totalVotesCast: votes.length / POSITIONS.length // approximate
+        });
+      }
     }
+  } catch (err) {
+    console.error('Supabase fetch results failed:', err);
   }
 
   // Fallback / Sandbox Mode Results
-  const sectionVotes = mockVotes.filter(v => v.section_id === sectionId);
-  const sectionCandidates = mockCandidates.filter(c => c.section_id === sectionId);
+  try {
+    const sectionVotes = mockVotes.filter(v => v.section_id === sectionId);
+    const sectionCandidates = mockCandidates.filter(c => c.section_id === sectionId);
 
-  const results: { [pos: string]: { [candId: string]: number } } = {};
-  
-  POSITIONS.forEach(pos => {
-    results[pos] = {};
-    sectionCandidates.forEach(c => {
-      results[pos][c.id] = 0;
+    const results: { [pos: string]: { [candId: string]: number } } = {};
+    
+    POSITIONS.forEach(pos => {
+      results[pos] = {};
+      sectionCandidates.forEach(c => {
+        results[pos][c.id] = 0;
+      });
     });
-  });
 
-  sectionVotes.forEach(v => {
-    if (results[v.position] && results[v.position][v.candidate_id] !== undefined) {
-      results[v.position][v.candidate_id]++;
-    }
-  });
+    sectionVotes.forEach(v => {
+      if (results[v.position] && results[v.position][v.candidate_id] !== undefined) {
+        results[v.position][v.candidate_id]++;
+      }
+    });
 
-  res.json({
-    positions: results,
-    totalVotesCast: sectionVotes.length
-  });
+    res.json({
+      positions: results,
+      totalVotesCast: sectionVotes.length
+    });
+  } catch (err) {
+    console.error('Sandbox results fetch failed:', err);
+    res.status(500).json({ error: 'Failed to fetch results' });
+  }
 });
 
 // 5. MONITOR OVERALL MONITORING (ADMIN OVERVIEW)
 app.get('/api/admin/overview/:electionId', async (req, res) => {
   const { electionId } = req.params;
 
-  if (useSupabaseMode) {
-    try {
+  try {
+    if (useSupabaseMode && supabase && electionId && electionId !== 'undefined') {
       // 1. Get all sections for this election
       const { data: sections, error: secErr } = await supabase
         .from('hrpta_sections')
@@ -1365,62 +1378,68 @@ app.get('/api/admin/overview/:electionId', async (req, res) => {
 
       const summaryStats = [];
 
-      for (const section of sections) {
-        // Fetch students counts
-        const { data: students, error: studErr } = await supabase
-          .from('hrpta_students')
-          .select('has_voted')
-          .eq('section_id', section.id);
+      if (sections && Array.isArray(sections)) {
+        for (const section of sections) {
+          // Fetch students counts
+          const { data: students, error: studErr } = await supabase
+            .from('hrpta_students')
+            .select('has_voted')
+            .eq('section_id', section.id);
 
-        if (studErr) throw studErr;
+          if (studErr) throw studErr;
 
-        const total_students = students.length;
-        const voted_students = students.filter((s: any) => s.has_voted).length;
+          const total_students = students?.length || 0;
+          const voted_students = students?.filter((s: any) => s.has_voted).length || 0;
 
-        summaryStats.push({
-          section_id: section.id,
-          section_name: section.section_name,
-          grade_level: section.grade_level,
-          adviser_name: section.adviser_name,
-          total_students,
-          voted_students,
-          participation_rate: total_students > 0 ? Math.round((voted_students / total_students) * 100) : 0
-        });
+          summaryStats.push({
+            section_id: section.id,
+            section_name: section.section_name,
+            grade_level: section.grade_level,
+            adviser_name: section.adviser_name,
+            total_students,
+            voted_students,
+            participation_rate: total_students > 0 ? Math.round((voted_students / total_students) * 100) : 0
+          });
+        }
+        return res.json(summaryStats);
       }
-
-      return res.json(summaryStats);
-    } catch (err) {
-      console.error('Supabase monitor stats failed:', err);
     }
+  } catch (err) {
+    console.error('Supabase monitor stats failed:', err);
   }
 
   // Sandbox Mode Stats
-  const sections = mockSections.filter(s => s.election_id === electionId);
-  const summaryStats = sections.map(sec => {
-    const students = mockStudents.filter(st => st.section_id === sec.id);
-    const total_students = students.length;
-    const voted_students = students.filter(st => st.has_voted).length;
+  try {
+    const sections = mockSections.filter(s => s.election_id === electionId);
+    const summaryStats = sections.map(sec => {
+      const students = mockStudents.filter(st => st.section_id === sec.id);
+      const total_students = students.length;
+      const voted_students = students.filter(st => st.has_voted).length;
 
-    return {
-      section_id: sec.id,
-      section_name: sec.section_name,
-      grade_level: sec.grade_level,
-      adviser_name: sec.adviser_name,
-      total_students,
-      voted_students,
-      participation_rate: total_students > 0 ? Math.round((voted_students / total_students) * 100) : 0
-    };
-  });
+      return {
+        section_id: sec.id,
+        section_name: sec.section_name,
+        grade_level: sec.grade_level,
+        adviser_name: sec.adviser_name,
+        total_students,
+        voted_students,
+        participation_rate: total_students > 0 ? Math.round((voted_students / total_students) * 100) : 0
+      };
+    });
 
-  res.json(summaryStats);
+    res.json(summaryStats);
+  } catch (err) {
+    console.error('Sandbox monitor stats failed:', err);
+    res.status(500).json({ error: 'Failed to fetch monitoring stats' });
+  }
 });
 
 // 6. EXPORT CANDIDATES (ADMIN)
 app.get('/api/admin/candidates/:electionId', async (req, res) => {
   const { electionId } = req.params;
 
-  if (useSupabaseMode) {
-    try {
+  try {
+    if (useSupabaseMode && supabase && electionId && electionId !== 'undefined') {
       // Fetch sections for this election
       const { data: sections, error: secErr } = await supabase
         .from('hrpta_sections')
@@ -1428,50 +1447,56 @@ app.get('/api/admin/candidates/:electionId', async (req, res) => {
         .eq('election_id', electionId);
       
       if (secErr) throw secErr;
-      const sectionIds = sections.map((s: any) => s.id);
-
-      // Fetch candidates for these sections
-      const { data: candidates, error: candErr } = await supabase
-        .from('hrpta_candidates')
-        .select('*')
-        .in('section_id', sectionIds);
       
-      if (candErr) throw candErr;
+      if (sections && Array.isArray(sections) && sections.length > 0) {
+        const sectionIds = sections.map((s: any) => s.id);
 
-      // Combine data
-      const enrichedCandidates = candidates.map((c: any) => {
-        const sec = sections.find((s: any) => s.id === c.section_id);
-        return {
-          ...c,
-          grade_level: sec?.grade_level,
-          section_name: sec?.section_name,
-          adviser_name: sec?.adviser_name
-        };
-      });
+        // Fetch candidates for these sections
+        const { data: candidates, error: candErr } = await supabase
+          .from('hrpta_candidates')
+          .select('*')
+          .in('section_id', sectionIds);
 
-      return res.json(enrichedCandidates);
-    } catch (err) {
-      console.error('Supabase export candidates failed:', err);
-      return res.status(500).json({ error: 'Failed to fetch candidates' });
+        if (candErr) throw candErr;
+
+        const enrichedCandidates = (candidates || []).map((c: any) => {
+          const sec = sections.find((s: any) => s.id === c.section_id);
+          return {
+            ...c,
+            grade_level: sec?.grade_level,
+            section_name: sec?.section_name,
+            adviser_name: sec?.adviser_name
+          };
+        });
+
+        return res.json(enrichedCandidates);
+      }
     }
+  } catch (err) {
+    console.error('Supabase fetch enriched candidates failed:', err);
   }
 
   // Sandbox Mode
-  const sections = mockSections.filter(s => s.election_id === electionId);
-  const sectionIds = sections.map(s => s.id);
-  const candidates = mockCandidates.filter(c => sectionIds.includes(c.section_id));
+  try {
+    const sections = mockSections.filter(s => s.election_id === electionId);
+    const sectionIds = sections.map(s => s.id);
+    const candidates = mockCandidates.filter(c => sectionIds.includes(c.section_id));
 
-  const enrichedCandidates = candidates.map(c => {
-    const sec = sections.find(s => s.id === c.section_id);
-    return {
-      ...c,
-      grade_level: sec?.grade_level,
-      section_name: sec?.section_name,
-      adviser_name: sec?.adviser_name
-    };
-  });
+    const enrichedCandidates = candidates.map(c => {
+      const sec = sections.find(s => s.id === c.section_id);
+      return {
+        ...c,
+        grade_level: sec?.grade_level,
+        section_name: sec?.section_name,
+        adviser_name: sec?.adviser_name
+      };
+    });
 
-  res.json(enrichedCandidates);
+    res.json(enrichedCandidates);
+  } catch (err) {
+    console.error('Sandbox fetch enriched candidates failed:', err);
+    res.status(500).json({ error: 'Failed to fetch candidates' });
+  }
 });
 
 

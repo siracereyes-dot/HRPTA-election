@@ -5,7 +5,7 @@ import {
   Plus, Trash2, Key, Users, Layers, ShieldCheck, Database, 
   Copy, Check, ToggleLeft, ToggleRight, AlertTriangle, Play, RefreshCw, BarChart3, Eye, EyeOff,
   Printer, Award, FileText, ChevronRight, LogIn, LogOut, Lock, Download, FileSpreadsheet,
-  History, Activity, Edit2, X, CheckCircle2
+  History, Activity, Edit2, X, CheckCircle2, Info
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Election, Section, SectionStats, Candidate, ActivityLog } from '../types';
@@ -54,6 +54,12 @@ export default function AdminPortal() {
     isOpen: boolean;
     title: string;
     message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [batchConfirm, setBatchConfirm] = useState<{
+    type: 'sections';
+    data: any[];
     onConfirm: () => void;
   } | null>(null);
 
@@ -334,18 +340,20 @@ export default function AdminPortal() {
   };
 
   const fetchElectionData = async () => {
-    if (!selectedElection) return;
+    if (!selectedElection || !selectedElection.id) return;
     try {
       // Fetch sections
       const secRes = await fetch(`/api/elections/${selectedElection.id}/sections`);
+      if (!secRes.ok) throw new Error('Failed to fetch sections');
       const secData = await secRes.json();
       setSections(secData);
 
       // Fetch monitoring/participation stats
       const statsRes = await fetch(`/api/admin/overview/${selectedElection.id}`);
+      if (!statsRes.ok) throw new Error('Failed to fetch stats');
       const statsData = await statsRes.json();
       setSectionStats(statsData);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching election sections/stats:', err);
     }
   };
@@ -393,7 +401,7 @@ export default function AdminPortal() {
     }
   };
 
-  const handleBulkSectionUpload = async () => {
+  const handleBulkSectionUpload = () => {
     if (!selectedElection) return;
     if (!bulkSectionText.trim()) {
       Swal.fire({
@@ -405,52 +413,70 @@ export default function AdminPortal() {
       return;
     }
 
-    setIsProcessingBulk(true);
     const lines = bulkSectionText.split('\n').filter(line => line.trim());
-    let successCount = 0;
-    let failCount = 0;
+    const parsedSections: any[] = [];
 
     for (const line of lines) {
       const parts = line.split(',').map(p => p.trim());
-      if (parts.length < 4) {
-        failCount++;
-        continue;
-      }
-
+      if (parts.length < 4) continue;
       const [sectionName, gradeLevel, adviserName, passcode] = parts;
-
-      try {
-        const res = await fetch(`/api/elections/${selectedElection.id}/sections`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            grade_level: gradeLevel,
-            section_name: sectionName,
-            adviser_name: adviserName,
-            adviser_passcode: passcode
-          })
-        });
-
-        if (res.ok) successCount++;
-        else failCount++;
-      } catch (err) {
-        console.error('Error processing bulk line:', err);
-        failCount++;
-      }
+      parsedSections.push({ sectionName, gradeLevel, adviserName, passcode });
     }
 
-    setIsProcessingBulk(false);
-    setBulkSectionText('');
-    fetchElectionData();
-    
-    Swal.fire({
-      icon: successCount > 0 ? 'success' : 'info',
-      title: 'Bulk Processing Complete',
-      html: `<div class="text-left font-mono text-sm">
-              <p class="text-emerald-600 font-bold">Successfully imported: ${successCount}</p>
-              <p class="text-rose-600 font-bold">Failed: ${failCount}</p>
-             </div>`,
-      confirmButtonColor: '#1e3a8a'
+    if (parsedSections.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Parsing Failed',
+        text: 'Could not parse any valid sections. Ensure the format is SectionName, GradeLevel, AdviserName, Passcode',
+        confirmButtonColor: '#1e3a8a'
+      });
+      return;
+    }
+
+    setBatchConfirm({
+      type: 'sections',
+      data: parsedSections,
+      onConfirm: async () => {
+        setIsProcessingBulk(true);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const item of parsedSections) {
+          try {
+            const res = await fetch(`/api/elections/${selectedElection.id}/sections`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                grade_level: item.gradeLevel,
+                section_name: item.sectionName,
+                adviser_name: item.adviserName,
+                adviser_passcode: item.passcode
+              })
+            });
+
+            if (res.ok) successCount++;
+            else failCount++;
+          } catch (err) {
+            console.error('Error processing bulk line:', err);
+            failCount++;
+          }
+        }
+
+        setIsProcessingBulk(false);
+        setBulkSectionText('');
+        fetchElectionData();
+        setBatchConfirm(null);
+        
+        Swal.fire({
+          icon: successCount > 0 ? 'success' : 'info',
+          title: 'Bulk Processing Complete',
+          html: `<div class="text-left font-mono text-sm">
+                  <p class="text-emerald-600 font-bold">Successfully imported: ${successCount}</p>
+                  <p class="text-rose-600 font-bold">Failed: ${failCount}</p>
+                 </div>`,
+          confirmButtonColor: '#1e3a8a'
+        });
+      }
     });
   };
 
@@ -1998,82 +2024,70 @@ export default function AdminPortal() {
                           </div>
                         </div>
 
-                        {gradeLevels.length === 0 ? (
-                          <p className="text-sm text-gray-500 text-center py-6">No grade levels found.</p>
-                        ) : (
-                          gradeLevels.map(grade => {
-                            const gradeSections = sections.filter(s => s.grade_level === grade);
-
-                            return (
-                              <div key={grade} className="border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-2xs">
-                                <div className="bg-slate-50 px-5 py-3 border-b border-[#e2e8f0] flex items-center justify-between">
-                                  <h4 className="font-serif font-bold text-sm text-[#1e3a8a]">
-                                    {grade} Elections
-                                  </h4>
-                                  <span className="text-[10px] uppercase tracking-wider font-mono font-bold bg-[#cbd5e1] text-[#1e3a8a] px-2.5 py-0.5 rounded-full">
-                                    {gradeSections.length} Sections
-                                  </span>
+                        <div className="space-y-4">
+                          {sections.length === 0 ? (
+                            <p className="text-sm text-gray-500 text-center py-6">No sections found.</p>
+                          ) : (
+                            sections.map(sec => {
+                              const stat = sectionStats.find(s => s.section_id === sec.id);
+                              return (
+                                <div key={sec.id} className="border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-2xs">
+                                  <div className="bg-slate-50 px-5 py-3 border-b border-[#e2e8f0] flex items-center justify-between">
+                                    <h4 className="font-serif font-bold text-sm text-[#1e3a8a]">
+                                      {sec.grade_level} - {sec.section_name}
+                                    </h4>
+                                    <span className="text-[10px] uppercase tracking-wider font-mono font-bold bg-[#cbd5e1] text-[#1e3a8a] px-2.5 py-0.5 rounded-full">
+                                      {stat ? `${stat.voted_students}/${stat.total_students} Voted` : '0/0 Voted'}
+                                    </span>
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                      <thead>
+                                        <tr className="bg-[#f8fafc] text-[#475569] uppercase font-bold tracking-wider font-mono border-b border-[#e2e8f0]">
+                                          <th className="px-4 py-3">President</th>
+                                          <th className="px-4 py-3">Vice President</th>
+                                          <th className="px-4 py-3">Secretary</th>
+                                          <th className="px-4 py-3">Treasurer</th>
+                                          <th className="px-4 py-3">Auditor</th>
+                                          <th className="px-4 py-3 text-right">Action</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-[#f1f5f9] text-[#0f172a]">
+                                        <tr className="hover:bg-[#f8fafc]/50 transition-colors">
+                                          <td className="px-4 py-3 font-medium">
+                                            {getWinnerForPosition(sec.id, 'President')}
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {getWinnerForPosition(sec.id, 'Vice President')}
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {getWinnerForPosition(sec.id, 'Secretary')}
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {getWinnerForPosition(sec.id, 'Treasurer')}
+                                          </td>
+                                          <td className="px-4 py-3 font-medium">
+                                            {getWinnerForPosition(sec.id, 'Auditor')}
+                                          </td>
+                                          <td className="px-4 py-3 text-right">
+                                            <button
+                                              type="button"
+                                              onClick={() => handlePrintSection(sec)}
+                                              className="text-[#1e3a8a] hover:text-amber-600 hover:bg-[#1e3a8a]/5 p-1 rounded-lg transition-all"
+                                              title="Print official section report"
+                                            >
+                                              <Printer className="w-4 h-4" />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                      <tr className="bg-[#f8fafc] text-[#475569] uppercase font-bold tracking-wider font-mono border-b border-[#e2e8f0]">
-                                        <th className="px-4 py-3">Section</th>
-                                        <th className="px-4 py-3">President</th>
-                                        <th className="px-4 py-3">Vice President</th>
-                                        <th className="px-4 py-3">Secretary</th>
-                                        <th className="px-4 py-3">Treasurer</th>
-                                        <th className="px-4 py-3">Auditor</th>
-                                        <th className="px-4 py-3 text-right">Turnout</th>
-                                        <th className="px-4 py-3 text-right">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-[#f1f5f9] text-[#0f172a]">
-                                      {gradeSections.map(sec => {
-                                        const stat = sectionStats.find(s => s.section_id === sec.id);
-                                        return (
-                                          <tr key={sec.id} className="hover:bg-[#f8fafc]/50 transition-colors">
-                                            <td className="px-4 py-3 font-bold text-[#1e3a8a]">
-                                              {sec.section_name}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'President')}>
-                                              {getWinnerForPosition(sec.id, 'President')}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Vice President')}>
-                                              {getWinnerForPosition(sec.id, 'Vice President')}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Secretary')}>
-                                              {getWinnerForPosition(sec.id, 'Secretary')}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Treasurer')}>
-                                              {getWinnerForPosition(sec.id, 'Treasurer')}
-                                            </td>
-                                            <td className="px-4 py-3 font-medium truncate max-w-[120px]" title={getWinnerForPosition(sec.id, 'Auditor')}>
-                                              {getWinnerForPosition(sec.id, 'Auditor')}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-mono font-bold">
-                                              {stat ? `${stat.voted_students}/${stat.total_students} (${stat.participation_rate}%)` : '0/0'}
-                                            </td>
-                                            <td className="px-4 py-3 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => handlePrintSection(sec)}
-                                                className="text-[#1e3a8a] hover:text-amber-600 hover:bg-[#1e3a8a]/5 p-1 rounded-lg transition-all"
-                                                title="Print official section report"
-                                              >
-                                                <Printer className="w-4 h-4" />
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2087,6 +2101,81 @@ export default function AdminPortal() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Batch Processing Confirmation Modal */}
+      {batchConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[32px] shadow-2xl border border-[#e2e8f0] w-full max-w-3xl overflow-hidden flex flex-col max-h-[80vh]"
+          >
+            <div className="px-8 py-6 border-b border-[#f1f5f9] flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#1e3a8a] text-white rounded-2xl flex items-center justify-center shadow-sm">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-xl text-[#1e3a8a]">Confirm Bulk Section Import</h3>
+                  <p className="text-xs text-[#475569] font-medium">Review the homeroom sections before final creation.</p>
+                </div>
+              </div>
+              <button onClick={() => setBatchConfirm(null)} className="p-2 hover:bg-gray-200 rounded-full transition-all">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                <Info className="w-5 h-5 text-[#1e3a8a] shrink-0 mt-0.5" />
+                <p className="text-xs text-[#1e3a8a] leading-relaxed">
+                  You are creating <span className="font-bold underline">{batchConfirm.data.length} new sections</span> for this election. 
+                  Each section will have its own unique adviser access passcode.
+                </p>
+              </div>
+
+              <div className="border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#f8fafc] text-[#475569] text-[10px] font-bold uppercase tracking-widest font-mono border-b border-[#e2e8f0]">
+                      <th className="px-4 py-3">Grade</th>
+                      <th className="px-4 py-3">Section Name</th>
+                      <th className="px-4 py-3">Adviser Name</th>
+                      <th className="px-4 py-3">Passcode</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f5f9] text-xs">
+                    {batchConfirm.data.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-[#f8fafc] transition-colors">
+                        <td className="px-4 py-2.5 font-bold text-[#1e3a8a]">{item.gradeLevel}</td>
+                        <td className="px-4 py-2.5 font-bold text-[#0f172a]">{item.sectionName}</td>
+                        <td className="px-4 py-2.5 text-[#475569]">{item.adviserName}</td>
+                        <td className="px-4 py-2.5 font-mono text-amber-700 font-bold">{item.passcode}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="px-8 py-6 border-t border-[#f1f5f9] flex items-center justify-end gap-3 bg-slate-50">
+              <button
+                onClick={() => setBatchConfirm(null)}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-[#475569] hover:bg-gray-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={batchConfirm.onConfirm}
+                className="px-8 py-2.5 bg-[#1e3a8a] hover:bg-[#172554] text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                Confirm & Create Sections
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
 

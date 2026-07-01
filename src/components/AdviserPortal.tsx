@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { 
   Key, UserCheck, Shield, UploadCloud, Users, BarChart3, 
   Trash2, Plus, Info, RefreshCw, FileSpreadsheet, Check, LogOut, AlertTriangle, Image as ImageIcon,
-  Pencil, Save, X, Download
+  Pencil, Save, X, Download, CheckCircle2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Candidate, Student, Position, POSITIONS } from '../types';
@@ -53,6 +53,12 @@ export default function AdviserPortal() {
     isOpen: boolean;
     title: string;
     message: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [batchConfirm, setBatchConfirm] = useState<{
+    type: 'students' | 'candidates';
+    data: any[];
     onConfirm: () => void;
   } | null>(null);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
@@ -352,12 +358,10 @@ export default function AdviserPortal() {
   };
 
   // Bulk student parse and upload
-  const handleBulkStudentUpload = async (e: React.FormEvent) => {
+  const handleBulkStudentUpload = (e: React.FormEvent) => {
     e.preventDefault();
     if (!session || !bulkLrnInput.trim()) return;
 
-    // Parse: One student per line
-    // Format: "123456789011, Juan Dela Cruz" or "123456789011" (name default to "Student [Lrn]")
     const lines = bulkLrnInput.split('\n');
     const studentList: { lrn: string; student_name: string }[] = [];
 
@@ -385,39 +389,44 @@ export default function AdviserPortal() {
       return;
     }
 
-    try {
-      const res = await fetch(`/api/sections/${session.section.id}/students/bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students: studentList })
-      });
+    setBatchConfirm({
+      type: 'students',
+      data: studentList,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/sections/${session.section.id}/students/bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ students: studentList })
+          });
 
-      if (res.ok) {
-        setBulkLrnInput('');
-        setUploadSuccess(prev => ({ ...prev, students: true }));
-        fetchSectionData();
-        setTimeout(() => setUploadSuccess(prev => ({ ...prev, students: false })), 3000);
-      } else {
-        const error = await res.json();
-        Swal.fire({
-          icon: 'error',
-          title: 'Upload Failed',
-          text: error.details || error.error || 'Failed to upload student roster.',
-          confirmButtonColor: '#1e3a8a'
-        });
+          if (res.ok) {
+            setBulkLrnInput('');
+            setUploadSuccess(prev => ({ ...prev, students: true }));
+            fetchSectionData();
+            setTimeout(() => setUploadSuccess(prev => ({ ...prev, students: false })), 3000);
+          } else {
+            const error = await res.json();
+            Swal.fire({
+              icon: 'error',
+              title: 'Upload Failed',
+              text: error.details || error.error || 'Failed to upload student roster.',
+              confirmButtonColor: '#1e3a8a'
+            });
+          }
+        } catch (err) {
+          console.error('Error bulk uploading students:', err);
+        }
+        setBatchConfirm(null);
       }
-    } catch (err) {
-      console.error('Error bulk uploading students:', err);
-    }
+    });
   };
 
   // Bulk Candidate Parse and upload
-  const handleBulkCandidateUpload = async (e: React.FormEvent) => {
+  const handleBulkCandidateUpload = (e: React.FormEvent) => {
     e.preventDefault();
     if (!session || !bulkCandInput.trim()) return;
 
-    // Parse: CSV format
-    // Format: Full Name, Child Name, Income Source (Employment/Business/Other/None), Income Details
     const lines = bulkCandInput.split('\n');
     const parsedCandidates: any[] = [];
 
@@ -441,28 +450,34 @@ export default function AdviserPortal() {
     }
 
     setBulkCandidateError('');
+    setBatchConfirm({
+      type: 'candidates',
+      data: parsedCandidates,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/sections/${session.section.id}/candidates/bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ candidates: parsedCandidates })
+          });
 
-    try {
-      const res = await fetch(`/api/sections/${session.section.id}/candidates/bulk`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidates: parsedCandidates })
-      });
-
-      if (res.ok) {
-        setBulkCandInput('');
-        setBulkCandidateError('');
-        setUploadSuccess(prev => ({ ...prev, candidates: true }));
-        fetchSectionData();
-        setTimeout(() => setUploadSuccess(prev => ({ ...prev, candidates: false })), 3000);
-      } else {
-        const error = await res.json();
-        setBulkCandidateError(error.error || 'Failed to bulk upload candidates.');
+          if (res.ok) {
+            setBulkCandInput('');
+            setBulkCandidateError('');
+            setUploadSuccess(prev => ({ ...prev, candidates: true }));
+            fetchSectionData();
+            setTimeout(() => setUploadSuccess(prev => ({ ...prev, candidates: false })), 3000);
+          } else {
+            const error = await res.json();
+            setBulkCandidateError(error.error || 'Failed to bulk upload candidates.');
+          }
+        } catch (err) {
+          console.error('Bulk candidate upload error:', err);
+          setBulkCandidateError('Connection error. Please try again.');
+        }
+        setBatchConfirm(null);
       }
-    } catch (err) {
-      console.error('Bulk candidate upload error:', err);
-      setBulkCandidateError('Connection error. Please try again.');
-    }
+    });
   };
 
   return (
@@ -1059,6 +1074,97 @@ export default function AdviserPortal() {
             alt="Enlarged"
             className="max-w-full max-h-[80vh] rounded-2xl shadow-2xl"
           />
+        </div>
+      )}
+
+      {/* Batch Processing Confirmation Modal */}
+      {batchConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-[32px] shadow-2xl border border-[#e2e8f0] w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]"
+          >
+            <div className="px-8 py-6 border-b border-[#f1f5f9] flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#1e3a8a] text-white rounded-2xl flex items-center justify-center shadow-sm">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-serif font-bold text-xl text-[#1e3a8a]">Confirm Batch Import</h3>
+                  <p className="text-xs text-[#475569] font-medium">Please review the parsed data below before proceeding.</p>
+                </div>
+              </div>
+              <button onClick={() => setBatchConfirm(null)} className="p-2 hover:bg-gray-200 rounded-full transition-all">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 mb-6 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  You are about to import <span className="font-bold underline">{batchConfirm.data.length} records</span> into the <strong>{batchConfirm.type === 'students' ? 'Student Roster' : 'Candidate List'}</strong>. 
+                  Existing records will not be deleted, but duplicates may be created if they already exist in the database.
+                </p>
+              </div>
+
+              <div className="border border-[#e2e8f0] rounded-2xl overflow-hidden shadow-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-[#f8fafc] text-[#475569] text-[10px] font-bold uppercase tracking-widest font-mono border-b border-[#e2e8f0]">
+                      <th className="px-4 py-3">#</th>
+                      {batchConfirm.type === 'students' ? (
+                        <>
+                          <th className="px-4 py-3">Student Name</th>
+                          <th className="px-4 py-3">LRN (Voter Key)</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3">Candidate Full Name</th>
+                          <th className="px-4 py-3">Child's Name</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f5f9] text-xs">
+                    {batchConfirm.data.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-[#f8fafc] transition-colors">
+                        <td className="px-4 py-2.5 text-[#64748b] font-mono">{idx + 1}</td>
+                        {batchConfirm.type === 'students' ? (
+                          <>
+                            <td className="px-4 py-2.5 font-bold text-[#0f172a]">{item.student_name}</td>
+                            <td className="px-4 py-2.5 font-mono text-[#475569]">{item.lrn}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-2.5 font-bold text-[#0f172a]">{item.fullname}</td>
+                            <td className="px-4 py-2.5 font-medium text-[#475569]">{item.child_name}</td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="px-8 py-6 border-t border-[#f1f5f9] flex items-center justify-end gap-3 bg-slate-50">
+              <button
+                onClick={() => setBatchConfirm(null)}
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-[#475569] hover:bg-gray-200 transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={batchConfirm.onConfirm}
+                className="px-8 py-2.5 bg-[#1e3a8a] hover:bg-[#172554] text-white rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                Confirm & Import Records
+              </button>
+            </div>
+          </motion.div>
         </div>
       )}
 
