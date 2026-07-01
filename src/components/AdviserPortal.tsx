@@ -226,9 +226,18 @@ export default function AdviserPortal() {
   }, []);
 
   useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
     if (session) {
       fetchSectionData();
+      
+      // Set up 15s interval for background updates
+      interval = setInterval(fetchSectionData, 15000);
     }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [session]);
 
   // Create single candidate
@@ -393,7 +402,7 @@ export default function AdviserPortal() {
         Swal.fire({
           icon: 'error',
           title: 'Upload Failed',
-          text: error.error || 'Failed to upload student roster.',
+          text: error.details || error.error || 'Failed to upload student roster.',
           confirmButtonColor: '#1e3a8a'
         });
       }

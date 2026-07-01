@@ -861,20 +861,36 @@ app.post('/api/sections/:sectionId/candidates/bulk', async (req, res) => {
           });
         }
 
-        const rows = candidates.map(c => ({
-          section_id: sectionId,
-          fullname: c.fullname,
-          child_name: c.child_name,
-          income_source: 'None',
-          income_details: '',
-          position: c.position
-        }));
-        const { data, error } = await supabase.from('hrpta_candidates').insert(rows).select();
+        const rows = (candidates || []).map((c: any) => {
+          const fullname = c.fullname?.toString().trim() || '';
+          const childName = c.child_name?.toString().trim() || '';
+          
+          if (!fullname) return null;
+          
+          return {
+            section_id: sectionId,
+            fullname: fullname,
+            child_name: childName,
+            income_source: 'None',
+            income_details: '',
+            position: c.position
+          };
+        }).filter(Boolean);
+
+        if (rows.length === 0) {
+          return res.status(400).json({ error: 'No valid candidates found in the list.' });
+        }
+
+        // Deduplicate by fullname within the batch
+        const uniqueRows = Array.from(new Map(rows.map(row => [row.fullname.toLowerCase(), row])).values());
+
+        const { data, error } = await supabase.from('hrpta_candidates').insert(uniqueRows).select();
         if (!error) {
-          logActivity('Bulk Nominations', `Adviser uploaded ${candidates.length} candidates for section ${sec.grade_level} - ${sec.section_name}.`, electionId);
+          logActivity('Bulk Nominations', `Adviser uploaded ${rows.length} candidates for section ${sec.grade_level} - ${sec.section_name}.`, electionId);
           return res.json(data);
         }
-        console.error('Supabase bulk save candidates failed:', error);
+        console.error('Supabase bulk save candidates failed:', JSON.stringify(error));
+        return res.status(500).json({ error: 'Failed to save candidates to database', details: error.message });
       }
     } catch (err) {}
   } else {
@@ -935,21 +951,35 @@ app.post('/api/sections/:sectionId/students/bulk', async (req, res) => {
   if (useSupabaseMode) {
     const { data: sec } = await supabase.from('hrpta_sections').select('election_id, grade_level, section_name').eq('id', sectionId).single();
     
-    const rows = students.map(st => ({
-      section_id: sectionId,
-      lrn: st.lrn.trim(),
-      student_name: st.student_name.trim(),
-      has_voted: false
-    }));
+    const rows = (students || []).map((st: any) => {
+      const lrn = st.lrn?.toString().trim() || '';
+      const name = st.student_name?.toString().trim() || 'Unknown Student';
+      
+      if (!lrn) return null;
+      
+      return {
+        section_id: sectionId,
+        lrn: lrn,
+        student_name: name
+      };
+    }).filter(Boolean);
 
-    const { data, error } = await supabase.from('hrpta_students').upsert(rows).select();
+    if (rows.length === 0) {
+      return res.status(400).json({ error: 'No valid students found in the list. Ensure each student has an LRN.' });
+    }
+
+    // Deduplicate by LRN within the array to prevent upsert conflicts in the same batch
+    const uniqueRows = Array.from(new Map(rows.map(row => [row.lrn, row])).values());
+
+    const { data, error } = await supabase.from('hrpta_students').upsert(uniqueRows, { onConflict: 'section_id,lrn' }).select();
     if (!error) {
       if (sec) {
-        logActivity('Student List Uploaded', `Adviser uploaded/updated ${students.length} students for section ${sec.grade_level} - ${sec.section_name}.`, sec.election_id);
+        logActivity('Student List Uploaded', `Adviser uploaded/updated ${rows.length} students for section ${sec.grade_level} - ${sec.section_name}.`, sec.election_id);
       }
       return res.json(data);
     }
-    console.error('Supabase bulk save students failed:', error);
+    console.error('Supabase bulk save students failed:', JSON.stringify(error));
+    return res.status(500).json({ error: 'Failed to save students to database', details: error.message });
   }
 
   // Sandbox mode: Append new students
@@ -1383,6 +1413,65 @@ app.get('/api/admin/overview/:electionId', async (req, res) => {
   });
 
   res.json(summaryStats);
+});
+
+// 6. EXPORT CANDIDATES (ADMIN)
+app.get('/api/admin/candidates/:electionId', async (req, res) => {
+  const { electionId } = req.params;
+
+  if (useSupabaseMode) {
+    try {
+      // Fetch sections for this election
+      const { data: sections, error: secErr } = await supabase
+        .from('hrpta_sections')
+        .select('id, grade_level, section_name, adviser_name')
+        .eq('election_id', electionId);
+      
+      if (secErr) throw secErr;
+      const sectionIds = sections.map((s: any) => s.id);
+
+      // Fetch candidates for these sections
+      const { data: candidates, error: candErr } = await supabase
+        .from('hrpta_candidates')
+        .select('*')
+        .in('section_id', sectionIds);
+      
+      if (candErr) throw candErr;
+
+      // Combine data
+      const enrichedCandidates = candidates.map((c: any) => {
+        const sec = sections.find((s: any) => s.id === c.section_id);
+        return {
+          ...c,
+          grade_level: sec?.grade_level,
+          section_name: sec?.section_name,
+          adviser_name: sec?.adviser_name
+        };
+      });
+
+      return res.json(enrichedCandidates);
+    } catch (err) {
+      console.error('Supabase export candidates failed:', err);
+      return res.status(500).json({ error: 'Failed to fetch candidates' });
+    }
+  }
+
+  // Sandbox Mode
+  const sections = mockSections.filter(s => s.election_id === electionId);
+  const sectionIds = sections.map(s => s.id);
+  const candidates = mockCandidates.filter(c => sectionIds.includes(c.section_id));
+
+  const enrichedCandidates = candidates.map(c => {
+    const sec = sections.find(s => s.id === c.section_id);
+    return {
+      ...c,
+      grade_level: sec?.grade_level,
+      section_name: sec?.section_name,
+      adviser_name: sec?.adviser_name
+    };
+  });
+
+  res.json(enrichedCandidates);
 });
 
 

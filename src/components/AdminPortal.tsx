@@ -72,6 +72,7 @@ export default function AdminPortal() {
     }
   }>({});
   const [loadingResults, setLoadingResults] = useState(false);
+  const [exportingCandidates, setExportingCandidates] = useState(false);
   const [printingSection, setPrintingSection] = useState<Section | null>(null);
 
   const handleExportAllResults = () => {
@@ -589,6 +590,72 @@ export default function AdminPortal() {
     }
   };
 
+  const exportCandidatesExcel = async () => {
+    if (!selectedElection || sections.length === 0) return;
+
+    setExportingCandidates(true);
+    try {
+      const res = await fetch(`/api/admin/candidates/${selectedElection.id}`);
+      if (!res.ok) throw new Error('Failed to fetch candidates');
+      
+      const candidates: any[] = await res.json();
+      
+      if (candidates.length === 0) {
+        Swal.fire({
+          icon: 'info',
+          title: 'No Candidates',
+          text: 'There are no candidates registered in this election yet.',
+          confirmButtonColor: '#1e3a8a'
+        });
+        return;
+      }
+
+      const exportData = candidates.map(c => ({
+        'Grade Level': c.grade_level,
+        'Section': c.section_name,
+        'Adviser': c.adviser_name,
+        'Position': c.position,
+        'Candidate Name': c.fullname,
+        'Child Name': c.child_name,
+        'Income Source': c.income_source || 'None',
+        'Income Details': c.income_details || ''
+      }));
+
+      // Sort by Grade Level then Section then Position
+      exportData.sort((a, b) => {
+        const gradeCompare = a['Grade Level'].localeCompare(b['Grade Level'], undefined, { numeric: true });
+        if (gradeCompare !== 0) return gradeCompare;
+        const sectionCompare = a['Section'].localeCompare(b['Section']);
+        if (sectionCompare !== 0) return sectionCompare;
+        return a['Position'].localeCompare(b['Position']);
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Candidates List");
+      
+      XLSX.writeFile(workbook, `Candidates_List_${selectedElection.title.replace(/\s+/g, '_')}.xlsx`);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Export Successful',
+        text: 'The list of candidates has been exported to Excel.',
+        timer: 2000,
+        showConfirmButton: false
+      });
+    } catch (err) {
+      console.error('Error exporting candidates:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: 'Failed to export candidates list to Excel. Please try again.',
+        confirmButtonColor: '#1e3a8a'
+      });
+    } finally {
+      setExportingCandidates(false);
+    }
+  };
+
   const deleteSection = async (id: string) => {
     setConfirmModal({
       isOpen: true,
@@ -722,11 +789,28 @@ export default function AdminPortal() {
     }
   };
 
+  // AUTO-REFRESH POLLING
   useEffect(() => {
-    if (adminSubTab === 'results' && selectedElection && sections.length > 0) {
-      fetchAllSectionResults();
+    let interval: NodeJS.Timeout;
+    
+    const refreshData = () => {
+      fetchElectionData();
+      if (adminSubTab === 'results' && sections.length > 0) {
+        fetchAllSectionResults();
+      }
+    };
+
+    if (isLoggedIn && selectedElection) {
+      refreshData();
+      
+      // Set up 30s interval for background updates
+      interval = setInterval(refreshData, 30000);
     }
-  }, [adminSubTab, selectedElection, sections.length]);
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isLoggedIn, selectedElection?.id, adminSubTab, sections.length]);
 
   useEffect(() => {
     if (sections.length > 0) {
@@ -1332,6 +1416,20 @@ export default function AdminPortal() {
                         </h3>
                         <div className="flex items-center gap-3">
                           <button 
+                            onClick={exportCandidatesExcel}
+                            disabled={exportingCandidates || sections.length === 0}
+                            className="text-blue-600 hover:text-blue-700 disabled:text-slate-300 text-xs font-bold flex items-center gap-1 transition-colors"
+                            title="Export all candidates to Excel"
+                          >
+                            {exportingCandidates ? (
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Users className="w-3.5 h-3.5" />
+                            )}
+                            Export Candidates (Excel)
+                          </button>
+                          <div className="w-px h-4 bg-[#e2e8f0]"></div>
+                          <button 
                             onClick={exportAllResults}
                             disabled={loadingResults || sections.length === 0}
                             className="text-emerald-600 hover:text-emerald-700 disabled:text-slate-300 text-xs font-bold flex items-center gap-1 transition-colors"
@@ -1371,7 +1469,11 @@ export default function AdminPortal() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-[#f1f5f9] text-sm">
-                              {sections.map((section) => {
+                              {sections.slice().sort((a, b) => {
+                                const statA = sectionStats.find(st => st.section_id === a.id)?.participation_rate || 0;
+                                const statB = sectionStats.find(st => st.section_id === b.id)?.participation_rate || 0;
+                                return statB - statA;
+                              }).map((section) => {
                                 const stat = sectionStats.find(st => st.section_id === section.id) || {
                                   total_students: 0,
                                   voted_students: 0,
@@ -1669,7 +1771,11 @@ export default function AdminPortal() {
                           <h4 className="text-xs font-bold text-[#475569] uppercase tracking-widest font-mono px-2 mb-3">
                             Select Homeroom Section
                           </h4>
-                          {sections.map(sec => {
+                          {sections.slice().sort((a, b) => {
+                            const statA = sectionStats.find(st => st.section_id === a.id)?.participation_rate || 0;
+                            const statB = sectionStats.find(st => st.section_id === b.id)?.participation_rate || 0;
+                            return statB - statA;
+                          }).map(sec => {
                             const isSelected = selectedResultsSection?.id === sec.id;
                             const stat = sectionStats.find(s => s.section_id === sec.id);
                             return (
